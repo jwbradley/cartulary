@@ -1,5 +1,5 @@
 #### What is Cartulary?
-  It's part of the new Freedom Controller project:  http://freedomcontroller.com
+  It's part of the Freedom Controller project:  http://freedomcontroller.com
 
   The larger goal of the project is an attempt at building a distributed social network
   through the use of standard RSS and OPML feeds.  This is the first product.
@@ -34,16 +34,16 @@
 
 #### INSTALL:
   The software will run on any unix-like system with a LAMP stack fairly easily, but it 
-  installs and upgrades easiest on Unbuntu 12 LTS.  That's what is assumed in the install
+  installs and upgrades easiest on Unbuntu LTS 14, 16, etc.  That's what is assumed in the install
   documentation.  Running on any other system will require installing by hand, which is
   not hard.
 
   Although the system will run without Amazon S3 configured, it loses a lot of the best
   functionality.  Amazon S3 is really cheap.  You should do it. :-)
 
-  Ubuntu 12 LTS [on Amazon Ec2]:
+  Example: Ubuntu 14,16 LTS [on Amazon Ec2]:
 
-    1. [Launch an "small" Ubuntu 12 LTS ec2 instance.]
+    1. [Launch a "small" Ubuntu LTS ec2 instance.]
     2. [Create an Elastic IP and assign it to your instance.]
     3. Create a DNS A or CNAME record for the server and point it to your elastic ip.
     4. Create two S3 buckets: 1 for holding user data and 1 for holding server backups.
@@ -71,3 +71,9 @@
        for your particular environment.
    
   
+#### SCREENSHOTS:
+  ![Saved articles page](https://github.com/daveajones/cartulary/raw/master/release_assets/articles.jpg "Saved articles page")
+  
+  ![The outline editor](https://github.com/daveajones/cartulary/raw/master/release_assets/editor.png "The outline editor")
+  
+  ![News river page](https://github.com/daveajones/cartulary/raw/master/release_assets/river.jpg "News river page")

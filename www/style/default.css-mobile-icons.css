@@ -11,11 +11,14 @@
 .icon-remove-small { display:inline-block; background:url('/images/glyph/glyphicons_halflings_086_remove.png') 3px 3px no-repeat; width:20px; height:20px; border:none; outline:none; }
 .icon-share { background:url('/images/glyph/glyphicons_222_share.png') 0px 1px no-repeat; width:24px; height:24px; border:0; margin-right:8px; }
 .icon-rss { display:inline-block; background:url('/images/glyph/glyphicons_397_rss.png') 0 0 no-repeat; width:30px; height:30px; border:none; outline:none; }
+.icon-email-send { display:inline-block; background:url('/images/glyph/glyphicons_124_message_plus.png') 8px 0 no-repeat; width:38px; height:30px; border:none; outline:none; }
 .icon-html { display:inline-block; background:url('/images/glyph/glyphicons_329_web_browser.png') 0 0 no-repeat; width:30px; height:30px; border:none; outline:none; }
 .icon-opml { display:inline-block; background:url('/images/glyph/glyphicons_359_file_export.png') 2px 0 no-repeat; width:30px; height:30px; border:none; outline:none; }
 .icon-import { display:inline-block; background:url('/images/glyph/glyphicons_417_rss-import.png') 0 0 no-repeat; width:30px; height:30px; border:none; outline:none; }
 .icon-twitter { display:inline-block; background:url('/images/glyph/glyphicons_391_twitter_t.png') 0 0 no-repeat; width:30px; height:30px; border:none; outline:none; }
 .icon-notwitter { display:inline-block; background:url('/images/glyph/glyphicons_391_twitter_t_invert.png') 0 0 no-repeat; width:30px; height:30px; border:none; outline:none; }
+.icon-mastodon { display:inline-block; background:url('/images/glyph/mastodon_chk.png') 0 0 no-repeat; width:30px; height:30px; border:none; outline:none; }
+.icon-nomastodon { display:inline-block; background:url('/images/glyph/nomastodon_chk.png') 0 0 no-repeat; width:30px; height:30px; border:none; outline:none; }
 .icon-attach { display:inline-block; background:url('/images/glyph/glyphicons_062_attach.png') 3px 3px no-repeat; width: 30px; height:30px; border:none; outline:none; }
 .icon-folder { display:inline-block; background:url('/images/glyph/glyphicons_halflings_117_folder_open.png') 0 6px no-repeat; width: 20px; height:20px; border:none;  outline:none; }
 .icon-retweet { display:inline-block; background:url('/images/glyph/glyphicons_halflings_114_retweet.png') 0 7px no-repeat; width:20px; height:20px; border:none; outline:none; }
@@ -59,8 +62,10 @@
 .icn-nav-microblog { display:inline-block; background:url('/images/glyph/glyphicons_309_comments.png') 3px 3px no-repeat; width:30px; height:28px; border:0; }
 .icn-nav-articles { display:inline-block; background:url('/images/glyph/glyphicons_072_bookmark.png') 8px 1px no-repeat; width:30px; height:28px; border:0; }
 .icn-nav-media { display:inline-block; background:url('/images/glyph/glyphicons_138_picture.png') 4px 2px no-repeat; width:30px; height:28px; border:0; }
+.icn-nav-radio { display:inline-block; background:url('/images/glyph/glyphicons_017_music.png') 4px 1px no-repeat; width:30px; height:28px; border:0; }
 .icn-nav-subscribe { display:inline-block; background:url('/images/glyph/glyphicons_397_rss.png') 3px 1px no-repeat; width:30px; height:28px; border:0; }
 .icn-nav-editor { display:inline-block; background:url('/images/glyph/glyphicons_039_notes.png') 5px 0px no-repeat; width:30px; height:28px; border:0; }
 .icn-nav-admin-user { display:inline-block; background:url('/images/glyph/glyphicons_024_parents.png') 0px 1px no-repeat; width:30px; height:28px; border:0; }
 .icn-nav-admin-feed { display:inline-block; background:url('/images/glyph/glyphicons_114_list.png') 0px 1px no-repeat; width:30px; height:28px; border:0; }
+.icn-nav-prefs { display:inline-block; background:url('/images/glyph/glyphicons_280_settings.png') 4px 2px no-repeat; width:30px; height:28px; border:0; }
 

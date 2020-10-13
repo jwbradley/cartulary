@@ -124,7 +124,7 @@ function add_post($uid = NULL, $content = NULL, $url = NULL, $shorturl = FALSE, 
 
     //Set the origin
     if ($origin == FALSE) {
-        loggit(3, "The origin is blank or corrupt: [$origin]. Set it to be an empty value.");
+        loggit(1, "The origin is blank or corrupt: [$origin]. Set it to be an empty value.");
         $origin = "";
     }
 
@@ -277,7 +277,7 @@ function user_owns_post($uid = NULL, $pid = NULL)
 
 
 //Retrieve a post from the repository
-function get_blog_posts($uid = NULL, $max = NULL, $pub = FALSE, $archive = FALSE)
+function get_blog_posts($uid = NULL, $max = NULL, $pub = FALSE, $archive = FALSE, $fromeditor = FALSE)
 {
     //Check parameters
     if ($uid == NULL) {
@@ -319,6 +319,10 @@ function get_blog_posts($uid = NULL, $max = NULL, $pub = FALSE, $archive = FALSE
 
     if ($pub == TRUE) {
         $sqltxt .= " AND ($table_mbcatalog.postid=$table_post.id OR $table_mbcatalog.public=1)";
+    }
+
+    if ($fromeditor == TRUE) {
+        $sqltxt .= " AND $table_post.opmlsource != ''";
     }
 
     if ($archive != FALSE) {
@@ -447,13 +451,13 @@ function get_first_blog_post($uid = NULL)
 
     $sql->close() or loggit(2, "MySql error: " . $dbh->error);
 
-    loggit(3, "Earliest post for user: [$uid] is timestamp: [" . $posts[0]['linkedon'] . "]");
+    loggit(1, "Earliest post for user: [$uid] is timestamp: [" . $posts[0]['linkedon'] . "]");
     return ($posts[0]);
 }
 
 
 //Search for posts that match query
-function search_posts($uid = NULL, $query = NULL, $max = NULL, $pub = FALSE)
+function search_posts($uid = NULL, $query = NULL, $max = NULL, $pub = FALSE, $withopml = FALSE)
 {
     //Check parameters
     if ($uid == NULL) {
@@ -511,11 +515,12 @@ function search_posts($uid = NULL, $query = NULL, $max = NULL, $pub = FALSE)
 
     //Adjust bindings
     $newsetup = "s" . $qsql['bind'][0];
-    $qsql['bind'][0] = & $newsetup;
+    $qsql['bind'][0] = &$newsetup;
     array_splice($qsql['bind'], 1, 0, array(&$uid));
 
     $ref = new ReflectionClass('mysqli_stmt');
     $method = $ref->getMethod("bind_param");
+    loggit(3, "DEBUG: ".print_r($qsql, TRUE));
     $method->invokeArgs($sql, $qsql['bind']);
 
     $sql->execute() or loggit(2, "MySql error: " . $dbh->error);
@@ -537,11 +542,19 @@ function search_posts($uid = NULL, $query = NULL, $max = NULL, $pub = FALSE)
         if (empty($title)) {
             $title = $content;
         }
-        $posts[$count] = array('id' => $id, 'title' => $title, 'url' => $url);
+        $posts[$count] = array('id' => $id, 'title' => $title, 'url' => $url, 'content' => $content);
         $count++;
     }
 
     $sql->close() or loggit(2, "MySql error: " . $dbh->error);
+
+    if($withopml) {
+        $s3url = build_blog_opml_feed($uid, $max, FALSE, $posts, FALSE, "search/mbsearch", TRUE, "Microblog search results: [".$query['flat']."]");
+        if(is_string($s3url)) {
+            $posts['opmlurl'] = $s3url;
+            loggit(3, "OPMLURL: ".$posts['opmlurl']);
+        }
+    }
 
     loggit(1, "Returning: [$count] posts for user: [$uid]");
     return ($posts);
@@ -549,7 +562,7 @@ function search_posts($uid = NULL, $query = NULL, $max = NULL, $pub = FALSE)
 
 
 //Build an rss feed for the given user
-function build_blog_rss_feed($uid = NULL, $max = NULL, $archive = FALSE, $posts = NULL, $nos3 = FALSE)
+function build_blog_rss_feed($uid = NULL, $max = NULL, $archive = FALSE, $posts = NULL, $nos3 = FALSE, $fromeditor = FALSE, $usetitles = FALSE)
 {
     //Check parameters
     if ($uid == NULL) {
@@ -570,7 +583,6 @@ function build_blog_rss_feed($uid = NULL, $max = NULL, $archive = FALSE, $posts 
         return (FALSE);
     }
 
-
     //Get a proper max value
     if ($max == NULL) {
         if (!empty($prefs['maxlist'])) {
@@ -585,10 +597,11 @@ function build_blog_rss_feed($uid = NULL, $max = NULL, $archive = FALSE, $posts 
 
     //If the array of posts is being passed in as an argument we don't make this call
     if ($posts == NULL || !is_array($posts)) {
-        $posts = get_blog_posts($uid, $max, NULL, $archive);
+        $posts = get_blog_posts($uid, $max, NULL, $archive, $fromeditor);
     }
 
     //Get a correct title
+    //TODO: Separate title for the full editor blog feed
     $title = get_microblog_title($uid);
 
     //Get the correct link
@@ -613,15 +626,23 @@ function build_blog_rss_feed($uid = NULL, $max = NULL, $archive = FALSE, $posts 
         $lastpostDate = date('Y-m-d', $posts[0]['createdon']);
     }
 
-    //Get the url of the social outline owner of this feed
-    $sopmlurl = "";
-    if (s3_is_enabled($uid) || sys_s3_is_enabled()) {
-        $sopmlurl = get_s3_url($uid, NULL, $default_social_outline_file_name);
+    //Determine feed file name based on which type of feed requested
+    if($fromeditor) {
+        $mbfeedfile = get_blog_feed_filename($uid);
+    } else {
+        $mbfeedfile = get_microblog_feed_filename($uid);
     }
 
+    //Get the url of the social outline owner of this feed
+    $sopmlurl = "";
+    $mbfeedurl = "";
+    if (s3_is_enabled($uid) || sys_s3_is_enabled()) {
+        $sopmlurl = get_s3_url($uid, NULL, $default_social_outline_file_name);
+        $mbfeedurl = get_s3_url($uid, NULL, $mbfeedfile);
+    }
 
     //The feed string
-    $rss = '<?xml version="1.0"?>' . "\n  <rss version=\"2.0\" xmlns:source=\"http://source.smallpict.com/2014/07/12/theSourceNamespace.html\" xmlns:sopml=\"$sopmlnamespaceurlv1\">\n    <channel>";
+    $rss = '<?xml version="1.0"?>' . "\n  <rss version=\"2.0\" xmlns:atom=\"http://www.w3.org/2005/Atom\" xmlns:source=\"http://source.smallpict.com/2014/07/12/theSourceNamespace.html\" xmlns:sopml=\"$sopmlnamespaceurlv1\" xmlns:content=\"http://purl.org/rss/1.0/modules/content/\">\n    <channel>";
 
     $rss .= "\n
       <title>" . htmlspecialchars($title) . "</title>
@@ -637,10 +658,11 @@ function build_blog_rss_feed($uid = NULL, $max = NULL, $archive = FALSE, $posts 
       <sopml:url>$sopmlurl</sopml:url>
       <source:archive>
           <source:url>" . htmlspecialchars(get_s3_url($uid, "arc")) . "/</source:url>
-          <source:filename>" . get_microblog_feed_filename($uid) . "</source:filename>
+          <source:filename>" .  $mbfeedfile . "</source:filename>
           <source:startDay>$firstpostDate</source:startDay>
           <source:endDay>$lastpostDate</source:endDay>
-      </source:archive>\n";
+      </source:archive>
+      <atom:link href=\"$mbfeedurl\" rel=\"self\" type=\"application/rss+xml\" />\n";
     }
     $rss .= "      <source:localTime>" . date('n/j/Y; g:i:s A') . "</source:localTime>\n";
 
@@ -663,46 +685,21 @@ function build_blog_rss_feed($uid = NULL, $max = NULL, $archive = FALSE, $posts 
                 $rssurl = htmlspecialchars($post['shorturl']);
                 $rsslink = "        <link>$rssurl</link>";
                 $guid = "        <guid>$rssurl</guid>";
-                $linkfull = "        <source:linkFull>" . htmlspecialchars(trim($post['url'])) . "</source:linkFull>";
+                $linkfull = "        <source:linkFull>" . clean_url_for_xml(trim($post['url'])) . "</source:linkFull>";
             } else {
-                $rssurl = htmlspecialchars($post['url']);
+                $rssurl = clean_url_for_xml($post['url']);
                 $rsslink = "        <link>$rssurl</link>";
                 $guid = "        <guid>$rssurl</guid>";
             }
         }
+        //Enumerate enclosures in this post
+        $rss_enclosures = "";
+        $html_enclosures = "";
         if (!empty($post['enclosure'])) {
             $enclosures = $post['enclosure'];
+            $html_enclosures = "";
         } else {
             $enclosures = array();
-        }
-        $tweeted = '';
-        if ($post['tweeted'] == 1) {
-            $tweeted = "        <sopml:tweeted>true</sopml:tweeted>\n";
-        }
-        $origin = '';
-        if (!empty($post['origin'])) {
-            $origin = "        <sopml:origin>" . htmlspecialchars(trim($post['origin'])) . "</sopml:origin>\n";
-        } else {
-            if (!empty($post['url'])) {
-                $origin = "        <sopml:origin>" . htmlspecialchars(trim($post['url'])) . "</sopml:origin>\n";
-            } else {
-                $origin = "        <sopml:origin>" . htmlspecialchars(trim($post['id'])) . "</sopml:origin>\n";
-            }
-        }
-
-        $rss .= "
-      <item>\n";
-        if (!empty($post['title'])) {
-            $rss .= "        <title>" . htmlspecialchars(trim($post['title'])) . "</title>\n";
-        }
-        $rss .= "        <description><![CDATA[" . trim($post['content']) . "]]></description>
-        <pubDate>" . date("D, d M Y H:i:s O", $post['createdon']) . "</pubDate>\n";
-        $rss .= $guid . "\n";
-        if (!empty($rsslink)) {
-            $rss .= $rsslink . "\n";
-        }
-        if (!empty($linkfull)) {
-            $rss .= $linkfull . "\n";
         }
         if (isset($enclosures)) {
             if (is_array($enclosures) && count($enclosures) > 0) {
@@ -715,18 +712,70 @@ function build_blog_rss_feed($uid = NULL, $max = NULL, $archive = FALSE, $posts 
                     if (!empty($enclosure['type'])) {
                         $etyp = 'type="' . $enclosure['type'] . '"';
                     }
-                    if (!empty($enclosure['url'])) {
-                        $rss .= '        <enclosure url="' . htmlspecialchars(trim($enclosure['url'])) . '" ' . $elen . ' ' . $etyp . ' />' . "\n";
+                    if (!empty($enclosure['url']) && $enclosure['url'] != "undefined") {
+                        $rss_enclosures .= '        <enclosure url="' . clean_url_for_xml(trim($enclosure['url'])) . '" ' . $elen . ' ' . $etyp . ' />' . "\n";
+                    }
+                    if(url_is_a_picture($enclosure['url'])) {
+                        $html_enclosures .= "<p><img src=\"".clean_url_for_xml($enclosure['url'])."\">"."</p>";
+                    }
+                    if(url_is_audio($enclosure['url'])) {
+                        $html_enclosures .= "<p><audio controls=\"true\"><source src=\"".clean_url_for_xml($enclosure['url'])."\" type='".$enclosure['type']."'></audio>"."</p>";
+                    }
+                    if(url_is_video($enclosure['url'])) {
+                        $html_enclosures .= "<p><video controls=\"true\"><source src=\"".clean_url_for_xml($enclosure['url'])."\" type='".$enclosure['type']."'></video>"."</p>";
                     }
                 }
             }
         }
+        //Was this post tweeted?
+        $tweeted = '';
+        if ($post['tweeted'] == 1) {
+            $tweeted = "        <sopml:tweeted>true</sopml:tweeted>\n";
+        }
+        //Tag it with an origin for tracking
+        $origin = '';
+        if (!empty($post['origin'])) {
+            $origin = "        <sopml:origin>" . clean_url_for_xml(trim($post['origin'])) . "</sopml:origin>\n";
+        } else {
+            if (!empty($post['url'])) {
+                $origin = "        <sopml:origin>" . clean_url_for_xml(trim($post['url'])) . "</sopml:origin>\n";
+            } else {
+                $origin = "        <sopml:origin>" . clean_url_for_xml(trim($post['id'])) . "</sopml:origin>\n";
+            }
+        }
+
+        $rss .= "
+      <item>\n";
+        if (!empty($post['title'])) {
+            $rss .= "        <title>" . htmlspecialchars(trim($post['title'])) . "</title>\n";
+        } else if ($usetitles) {
+            $rss .= "        <title>" . htmlspecialchars(trim($post['content'])) . "</title>\n";
+        }
+        //TODO: their should be a pref check here on whether to include enclosures as html
+        $rss .= "        <description><![CDATA[" . trim($post['content'].$html_enclosures) . "]]></description>
+        <pubDate>" . date("D, d M Y H:i:s O", $post['createdon']) . "</pubDate>\n";
+        $rss .= $guid . "\n";
+        if (!empty($rsslink)) {
+            $rss .= $rsslink . "\n";
+        }
+        if (!empty($linkfull)) {
+            $rss .= $linkfull . "\n";
+        }
         if (!empty($post['sourceurl']) || !empty($post['sourcetitle'])) {
-            $rss .= '        <source url="' . htmlspecialchars(trim($post['sourceurl'])) . '">' . htmlspecialchars(trim($post['sourcetitle'])) . '</source>' . "\n";
+            $rss .= '        <source url="' . clean_url_for_xml(trim($post['sourceurl'])) . '">' . htmlspecialchars(trim($post['sourcetitle'])) . '</source>' . "\n";
         }
-        if ( !empty($post['opml']) ) {
-            $rss .= '        <sopml:opml>'.$post['opml'].'</sopml:opml>';
+        if (!empty($post['opml'])) {
+            //For sopml namespace
+            $rss .= '        <sopml:opml><![CDATA[' . remove_non_tag_space($post['opml']) . ']]></sopml:opml>';
+            //For facebook IA
+            $rss .= "\n".'        <content:encoded><![CDATA['."\n".convert_opml_to_ia($post['opml'], $rssurl).']]></content:encoded>'."\n";
+            //For source namespace
+            $snsopml = convert_opml_to_source_namespace($post['opml'], NULL, TRUE, '        ');
+            if($snsopml !== FALSE) {
+                $rss .= $snsopml."\n";
+            }
         }
+        $rss .= $rss_enclosures;
         $rss .= "        <author>" . get_email_from_uid($uid) . " ($username)</author>\n";
         $rss .= $tweeted;
         $rss .= $origin;
@@ -741,7 +790,10 @@ function build_blog_rss_feed($uid = NULL, $max = NULL, $archive = FALSE, $posts 
         $s3info = get_s3_info($uid);
 
         //Get the microblog feed file name
-        $filename = get_microblog_feed_filename($uid);
+        $filename = $mbfeedfile;
+        if($usetitles) {
+            $filename = "titles-".$mbfeedfile;
+        }
         $arcpath = '';
 
         //Was this a request for a monthly archive?
@@ -751,7 +803,10 @@ function build_blog_rss_feed($uid = NULL, $max = NULL, $archive = FALSE, $posts 
         }
 
         //Put the file
-        $s3res = putInS3(gzencode($rss), $filename, $s3info['bucket'] . $arcpath, $s3info['key'], $s3info['secret'], array("Content-Type" => "application/rss+xml", "Content-Encoding" => "gzip"));
+        $s3res = putInS3(gzencode($rss), $filename, $s3info['bucket'] . $arcpath, $s3info['key'], $s3info['secret'], array(
+            'Content-Type'      => 'application/rss+xml',
+            'Content-Encoding'  => 'gzip'
+        ));
         if (!$s3res) {
             loggit(2, "Could not create S3 file: [$filename] for user: [$username].");
             //loggit(3, "Could not create S3 file: [$filename] for user: [$username].");
@@ -768,7 +823,7 @@ function build_blog_rss_feed($uid = NULL, $max = NULL, $archive = FALSE, $posts 
     }
 
 
-    loggit(1, "Built blog rss feed for user: [$username | $uid].");
+    loggit(3, "Built blog rss feed for user: [$username | $uid] with filename: [$mbfeedfile] from editor posts: [$fromeditor].");
     return ($rss);
 }
 
@@ -839,8 +894,8 @@ function delete_post($pid = NULL)
 }
 
 
-//Build an rss feed for the given user
-function build_blog_opml_feed($uid = NULL, $max = NULL, $archive = FALSE, $posts = NULL, $nos3 = FALSE)
+//Build an opml outline of posts for the given user
+function build_blog_opml_feed($uid = NULL, $max = NULL, $archive = FALSE, $posts = NULL, $nos3 = FALSE, $s3filename = NULL, $returns3url = FALSE, $giventitle = NULL)
 {
     //Check parameters
     if ($uid == NULL) {
@@ -860,6 +915,9 @@ function build_blog_opml_feed($uid = NULL, $max = NULL, $archive = FALSE, $posts
         $title = $prefs['microblogtitle'];
     } else {
         $title = "What $username is saying.";
+    }
+    if ( !empty($giventitle) ) {
+        $title = $giventitle;
     }
 
     //Get a proper max value
@@ -943,12 +1001,17 @@ function build_blog_opml_feed($uid = NULL, $max = NULL, $archive = FALSE, $posts
 
 
     //If this user has S3 storage enabled, then do it
+    $s3res = FALSE;
     if ((s3_is_enabled($uid) || sys_s3_is_enabled()) && !$nos3) {
         //First we get all the key info
         $s3info = get_s3_info($uid);
 
         //Get the microblog feed file name
-        $filename = get_microblog_opml_filename($uid);
+        if(!empty($s3filename)) {
+            $filename = $s3filename.".".time().".opml";
+        } else {
+            $filename = get_microblog_opml_filename($uid);
+        }
         $arcpath = '';
 
         //Was this a request for a monthly archive?
@@ -958,18 +1021,24 @@ function build_blog_opml_feed($uid = NULL, $max = NULL, $archive = FALSE, $posts
         }
 
         //Put the file
-        $s3res = putInS3($opml, $filename, $s3info['bucket'] . $arcpath, $s3info['key'], $s3info['secret'], "text/xml");
+        $s3res = putInS3(gzencode($opml), $filename, $s3info['bucket'] . $arcpath, $s3info['key'], $s3info['secret'], array(
+            'Content-Type'      => 'text/xml',
+            'Content-Encoding'  => 'gzip'
+        ));
         if (!$s3res) {
             loggit(2, "Could not create S3 file: [$filename] for user: [$username].");
             //loggit(3, "Could not create S3 file: [$filename] for user: [$username].");
         } else {
             $s3url = get_s3_url($uid, $arcpath, $filename);
-            loggit(1, "Wrote feed to S3 at url: [$s3url].");
+            loggit(3, "Wrote feed to S3 at url: [$s3url].");
         }
     }
 
 
     loggit(1, "Built blog opml feed for user: [$username | $uid].");
+    if($returns3url && $s3res) {
+        return($s3url);
+    }
     return ($opml);
 }
 
@@ -994,6 +1063,24 @@ function get_microblog_feed_filename($uid = NULL)
 
     //loggit(1,"Returning user name: [$username] for uid: [$uid]");
     return ($prefs['mbfilename']);
+}
+
+
+//Get the file name of the microblog feed
+function get_blog_feed_filename($uid = NULL)
+{
+    //If uid is zero then balk
+    if (empty($uid)) {
+        loggit(2, "Can't get the username from this uid: [$uid]");
+        return (FALSE);
+    }
+
+    //Includes
+    include get_cfg_var("cartulary_conf") . '/includes/env.php';
+
+    //TODO: Pref for getting a custom file name here
+
+    return ($default_editor_blog_feed_file_name);
 }
 
 
@@ -1247,9 +1334,9 @@ function build_blog_html_archive($uid = NULL, $max = NULL, $archive = FALSE, $po
 
     $lastpostday = "";
     foreach ($posts as $post) {
+        $rsslink = "";
+        $linkfull = "";
         if ($post['url'] == "") {
-            $rsslink = "";
-            $linkfull = "";
             $guid = "        <span class=\"guid\">" . $post['id'] . "</span>";
         } else {
             if (!empty($post['shorturl'])) {
@@ -1270,7 +1357,7 @@ function build_blog_html_archive($uid = NULL, $max = NULL, $archive = FALSE, $po
         }
 
         $newpostday = date("D, d M Y", $post['createdon']);
-        if( $lastpostday != $newpostday ) {
+        if ($lastpostday != $newpostday) {
             $postpubdate = "<p class=\"pubdate\">" . date("D, d M Y", $post['createdon']) . "</p>\n";
         } else {
             $postpubdate = "\n";
@@ -1283,19 +1370,40 @@ function build_blog_html_archive($uid = NULL, $max = NULL, $archive = FALSE, $po
         if (!empty($post['title'])) {
             $html .= "        <h3>" . xmlentities(trim($post['title'])) . "</h3>\n";
         }
-        //$html .= "        <p class=\"description\">".xmlentities(trim( str_replace("\n", '', $post['content'] ) ))."</p>\n";
-        $html .= "        <p class=\"description\">" . safe_html(trim($post['content'])) . "</p>\n";
+        if(!empty($rsslink)) {
+            $html .= "        <p class=\"description\"><a href='$rssurl'>" . safe_html(trim($post['content'])) . "</a></p>\n";
+        } else {
+            $html .= "        <p class=\"description\">" . safe_html(trim($post['content'])) . "</p>\n";
+        }
+
+        if (preg_match('/youtube\.com/i', $linkfull)) {
+            preg_match("/v[\/\=]([A-Za-z0-9\_\-]*)/i", $linkfull, $matches) || loggit(2, "Couldn't extract YouTube ID string.");
+            $html .= '<br/><iframe class="enclosureview youtube" src="https://www.youtube.com/embed/' . $matches[1] . '" frameborder="0" allowfullscreen></iframe>';
+        }
+
         if (isset($enclosures)) {
             if (is_array($enclosures) && count($enclosures) > 0) {
                 foreach ($enclosures as $enclosure) {
-                    if (strripos($enclosure['url'], ".jpg") !== FALSE || strripos($enclosure['url'], ".gif") !== FALSE || strripos($enclosure['url'], ".png") !== FALSE) {
-                        $html .= '        <p class="enclosureview"><img class="enclosureimg" alt="" src="' . htmlspecialchars($enclosure['url']) . '" /></p>' . "\n";
+                    //Is this a youtube link?
+                    if (preg_match('/youtube\.com/i', $enclosure['url'])) {
+                        preg_match("/v[\/\=]([A-Za-z0-9\_\-]*)/i", $enclosure['url'], $matches) || loggit(2, "Couldn't extract YouTube ID string.");
+                        $html .= '<br/><iframe class="enclosureview youtube" src="https://www.youtube.com/embed/' . $matches[1] . '" frameborder="0" allowfullscreen></iframe>';
+                    } else
+                    if(url_is_a_picture($enclosure['url'])) {
+                        $html .= "<p class=\"enclosureview picture\"><img class=\"enclosureimg\" alt=\"\" src=\"".clean_url_for_xml($enclosure['url'])."\">"."</p>";
+                    } else
+                    if(url_is_audio($enclosure['url'])) {
+                        $html .= "<p class=\"enclosureview audio\"><audio controls=\"true\"><source src=\"".clean_url_for_xml($enclosure['url'])."\" type='".$enclosure['type']."'></audio>"."</p>";
+                    } else
+                    if(url_is_video($enclosure['url'])) {
+                        $html .= "<p class=\"enclosureview video\"><video controls=\"true\"><source src=\"".clean_url_for_xml($enclosure['url'])."\" type='".$enclosure['type']."'></video>"."</p>";
                     }
                 }
             }
         }
+
         $html .= $guid . "\n";
-        $html .= '<div class="linkage">'."\n";
+        $html .= '<div class="linkage">' . "\n";
         if (!empty($rsslink)) {
             $html .= $rsslink . "\n";
         }
@@ -1312,7 +1420,7 @@ function build_blog_html_archive($uid = NULL, $max = NULL, $archive = FALSE, $po
         if (!empty($post['sourceurl']) || !empty($post['sourcetitle'])) {
             $html .= '        Source: <a class="source" href="' . htmlspecialchars($post['sourceurl']) . '">' . htmlspecialchars($post['sourcetitle']) . '</a>' . "\n";
         }
-        $html .= '</div>'."\n";
+        $html .= '</div>' . "\n";
         $html .= "      </div></div>\n";
     }
 
@@ -1328,16 +1436,17 @@ function build_blog_html_archive($uid = NULL, $max = NULL, $archive = FALSE, $po
         $arcpath = '';
 
         //Was this a request for a monthly archive?
-        if ($archive != FALSE) {
+        if ($archive) {
             $arcpath = "/arc/" . date('Y') . "/" . date('m') . "/" . date('d');
-            //loggit(3, "Archive path: [".$arcpath."]");
         }
 
         //Put the file
-        $s3res = putInS3($html, $filename, $s3info['bucket'] . $arcpath, $s3info['key'], $s3info['secret'], "text/html");
+        $s3res = putInS3(gzencode($html), $filename, $s3info['bucket'] . $arcpath, $s3info['key'], $s3info['secret'], array(
+            'Content-Type'      => 'text/html',
+            'Content-Encoding'  => 'gzip'
+        ));
         if (!$s3res) {
             loggit(2, "Could not create S3 file: [$filename] for user: [$username].");
-            //loggit(3, "Could not create S3 file: [$filename] for user: [$username].");
         } else {
             $s3url = get_s3_url($uid, $arcpath, $filename);
             loggit(1, "Wrote file to S3 at url: [$s3url].");
@@ -1441,7 +1550,10 @@ function build_blog_script_widget($uid = NULL, $max = NULL, $archive = FALSE, $p
         }
 
         //Put the file
-        $s3res = putInS3($html, $filename, $s3info['bucket'] . $arcpath, $s3info['key'], $s3info['secret'], "application/javascript");
+        $s3res = putInS3(gzencode($html), $filename, $s3info['bucket'] . $arcpath, $s3info['key'], $s3info['secret'], array(
+            'Content-Type'      => 'application/javascript',
+            'Content-Encoding'  => 'gzip'
+        ));
         if (!$s3res) {
             loggit(2, "Could not create S3 file: [$filename] for user: [$username].");
             //loggit(3, "Could not create S3 file: [$filename] for user: [$username].");

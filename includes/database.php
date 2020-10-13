@@ -5,7 +5,7 @@
 
 
 //A list of database schema updates for each version
-$cg_database_version = 56;
+$cg_database_version = 94;
 $cg_database_updates = array();
 
 
@@ -767,6 +767,504 @@ CGDB0170;
 $cg_database_updates[55][] = <<<CGDB0171
  INSERT INTO `dbversion` ( `version` ) VALUES ( '56' )
 CGDB0171;
+//----------------------------------------------------------------------------------------------------------------
+
+//Version 56 to 57 -----------------------------------------------------------------------------------------------
+$cg_database_updates[56][] = <<<CGDB0172
+ ALTER TABLE `recentfiles` ADD `type` INT NOT NULL
+CGDB0172;
+$cg_database_updates[56][] = <<<CGDB0173
+ ALTER TABLE `recentfiles` ADD INDEX (`type`)
+CGDB0173;
+$cg_database_updates[56][] = <<<CGDB0174
+ INSERT INTO `dbversion` ( `version` ) VALUES ( '57' )
+CGDB0174;
+//----------------------------------------------------------------------------------------------------------------
+
+//Version 57 to 58 -----------------------------------------------------------------------------------------------
+$cg_database_updates[57][] = <<<CGDB0175
+ TRUNCATE TABLE `nfitem_map_catalog`
+CGDB0175;
+$cg_database_updates[57][] = <<<CGDB0176
+ DELETE FROM `nfitem_map` where 1
+CGDB0176;
+$cg_database_updates[57][] = <<<CGDB0177
+ ALTER TABLE `nfitem_map_catalog` ADD `added` DATETIME NOT NULL COMMENT 'Date the correlation was added',
+ ADD INDEX ( `added` )
+CGDB0177;
+$cg_database_updates[57][] = <<<CGDB0178
+ INSERT INTO `dbversion` ( `version` ) VALUES ( '58' )
+CGDB0178;
+//----------------------------------------------------------------------------------------------------------------
+
+//Version 58 to 59 -----------------------------------------------------------------------------------------------
+$cg_database_updates[58][] = <<<CGDB0179
+ CREATE TABLE IF NOT EXISTS `nfenclosures` (
+  `id` bigint(20) NOT NULL AUTO_INCREMENT COMMENT 'Enclosure id',
+  `iid` bigint(20) NOT NULL COMMENT 'Newsfeed item id',
+  `url` varchar(2048) NOT NULL COMMENT 'Url of the enclosure',
+  `mimetype` varchar(64) NOT NULL COMMENT 'Mimetype of the enclosure',
+  `length` bigint(20) NOT NULL COMMENT 'Size in bytes of the enclosure',
+  `time` DATETIME NOT NULL COMMENT 'Incoming enclosure time',
+  `type` int(11) NOT NULL COMMENT 'Internal type spec',
+  `marker` int(11) NOT NULL COMMENT 'TImestampe of last play marker',
+  PRIMARY KEY (`id`),
+  KEY `iid` (`iid`),
+  KEY `type` (`type`),
+  KEY `time` (`time`)
+ ) ENGINE=InnoDB  DEFAULT CHARSET=latin1 COMMENT='Enclosures from the newsfeed item table' AUTO_INCREMENT=1
+CGDB0179;
+$cg_database_updates[58][] = <<<CGDB0180
+ ALTER TABLE `nfenclosures`
+ ADD CONSTRAINT `nfenclosures_ibfk_1` FOREIGN KEY (`iid`) REFERENCES `nfitems` (`id`) ON DELETE CASCADE ON UPDATE CASCADE
+CGDB0180;
+$cg_database_updates[58][] = <<<CGDB0181
+ INSERT INTO `dbversion` ( `version` ) VALUES ( '59' )
+CGDB0181;
+//----------------------------------------------------------------------------------------------------------------
+
+//Version 59 to 60 -----------------------------------------------------------------------------------------------
+$cg_database_updates[59][] = <<<CGDB0182
+ CREATE TABLE IF NOT EXISTS `nfitem_map_count` (
+  `wordid` bigint(20) NOT NULL COMMENT 'Id of word in map table',
+  `totals` int(11) NOT NULL COMMENT 'Number of occurences in nfitems table'
+ ) ENGINE=InnoDB  DEFAULT CHARSET=latin1 COMMENT='Keeps a running total of the occurences of each word'
+ AUTO_INCREMENT=1
+CGDB0182;
+$cg_database_updates[59][] = <<<CGDB0183
+ ALTER TABLE `nfitem_map_count` ADD FOREIGN KEY ( `wordid` ) REFERENCES `cartulary`.`nfitem_map` (
+ `id`
+ ) ON DELETE CASCADE ON UPDATE CASCADE
+CGDB0183;
+$cg_database_updates[59][] = <<<CGDB0184
+ INSERT INTO `dbversion` ( `version` ) VALUES ( '60' )
+CGDB0184;
+//----------------------------------------------------------------------------------------------------------------
+
+//Version 60 to 61 -----------------------------------------------------------------------------------------------
+$cg_database_updates[60][] = <<<CGDB0185
+ CREATE TABLE IF NOT EXISTS `nfitem_map_count_today` (
+  `wordid` bigint(20) NOT NULL COMMENT 'Id of word in map table',
+  `totals` int(11) NOT NULL COMMENT 'Number of occurences in nfitems table'
+ ) ENGINE=InnoDB  DEFAULT CHARSET=latin1 COMMENT='Total of the occurences of each word for last 23 hours'
+ AUTO_INCREMENT=1
+CGDB0185;
+$cg_database_updates[60][] = <<<CGDB0186
+ ALTER TABLE `nfitem_map_count_today` ADD FOREIGN KEY ( `wordid` ) REFERENCES `cartulary`.`nfitem_map` (
+ `id`
+ ) ON DELETE CASCADE ON UPDATE CASCADE
+CGDB0186;
+$cg_database_updates[60][] = <<<CGDB0187
+ INSERT INTO `dbversion` ( `version` ) VALUES ( '61' )
+CGDB0187;
+//----------------------------------------------------------------------------------------------------------------
+
+//Version 61 to 62 -----------------------------------------------------------------------------------------------
+$cg_database_updates[61][] = <<<CGDB0188
+ ALTER TABLE `recentfiles` ADD `ipfshash` VARCHAR( 48 ) CHARACTER SET latin1 COLLATE latin1_bin NOT NULL ,
+ ADD INDEX ( `ipfshash` )
+CGDB0188;
+$cg_database_updates[61][] = <<<CGDB0189
+ INSERT INTO `dbversion` ( `version` ) VALUES ( '62' )
+CGDB0189;
+//----------------------------------------------------------------------------------------------------------------
+
+//Version 62 to 63 -----------------------------------------------------------------------------------------------
+$cg_database_updates[62][] = <<<CGDB0190
+ ALTER TABLE `nfitems` ADD `cbscore` INT NOT NULL COMMENT 'Click-bait score'
+CGDB0190;
+$cg_database_updates[62][] = <<<CGDB0191
+ INSERT INTO `dbversion` ( `version` ) VALUES ( '63' )
+CGDB0191;
+//----------------------------------------------------------------------------------------------------------------
+
+//Version 63 to 64 -----------------------------------------------------------------------------------------------
+$cg_database_updates[63][] = <<<CGDB0192
+ ALTER TABLE `newsfeeds` ADD UNIQUE (`url`)
+CGDB0192;
+$cg_database_updates[63][] = <<<CGDB0193
+ INSERT INTO `dbversion` ( `version` ) VALUES ( '64' )
+CGDB0193;
+//----------------------------------------------------------------------------------------------------------------
+
+//Version 64 to 65 -----------------------------------------------------------------------------------------------
+$cg_database_updates[64][] = <<<CGDB0194
+  ALTER TABLE `nfenclosures` ADD `source` INT NOT NULL COMMENT 'Is this an html scrape or an enclosure?'
+CGDB0194;
+$cg_database_updates[64][] = <<<CGDB0195
+ INSERT INTO `dbversion` ( `version` ) VALUES ( '65' )
+CGDB0195;
+//----------------------------------------------------------------------------------------------------------------
+
+//Version 65 to 66 -----------------------------------------------------------------------------------------------
+$cg_database_updates[65][] = <<<CGDB0196
+  CREATE TABLE IF NOT EXISTS `tokens` ( 
+      `id` BIGINT NOT NULL AUTO_INCREMENT , 
+      `userid` VARCHAR(64) CHARACTER SET latin1 COLLATE latin1_bin NOT NULL , 
+      `token` VARCHAR(48) CHARACTER SET latin1 COLLATE latin1_bin NOT NULL , 
+      `lastusedon` DATETIME NOT NULL , 
+      `useragent` VARCHAR(255) CHARACTER SET latin1 COLLATE latin1_general_ci NOT NULL , 
+      `createdon` TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP , 
+    PRIMARY KEY (`id`), 
+    INDEX `userid` (`userid`), 
+    UNIQUE `token` (`token`)
+  ) ENGINE = InnoDB COMMENT = 'Application tokens'
+CGDB0196;
+$cg_database_updates[65][] = <<<CGDB0197
+  ALTER TABLE `tokens` ADD CONSTRAINT `userid` FOREIGN KEY (`userid`) REFERENCES `users`(`id`) ON DELETE CASCADE ON UPDATE CASCADE
+CGDB0197;
+$cg_database_updates[65][] = <<<CGDB0198
+ INSERT INTO `dbversion` ( `version` ) VALUES ( '66' )
+CGDB0198;
+//----------------------------------------------------------------------------------------------------------------
+
+//Version 66 to 67 -------------------------------------------------------------------------------------------------
+$cg_database_updates[66][] = <<<CGDB0199
+ ALTER TABLE `prefs` ADD `darkmode` TINYINT NOT NULL DEFAULT '0' COMMENT 'Used dark theme for the UI?'
+CGDB0199;
+$cg_database_updates[66][] = <<<CGDB0200
+ INSERT INTO `dbversion` ( `version` ) VALUES ( '67' )
+CGDB0200;
+//----------------------------------------------------------------------------------------------------------------
+
+//Version 67 to 68 -----------------------------------------------------------------------------------------------
+$cg_database_updates[67][] = <<<CGDB0201
+ ALTER TABLE `prefs` ADD `mastodon_url` VARCHAR( 160 ) NOT NULL COMMENT 'url to mastodon instance'
+CGDB0201;
+$cg_database_updates[67][] = <<<CGDB0202
+ ALTER TABLE `prefs` ADD `mastodon_app_token` VARCHAR( 80 ) NOT NULL COMMENT 'mastodon app token'
+CGDB0202;
+$cg_database_updates[67][] = <<<CGDB0203
+ ALTER TABLE `prefs` ADD `mastodon_client_id` VARCHAR( 80 ) NOT NULL COMMENT 'mastodon app client_id'
+CGDB0203;
+$cg_database_updates[67][] = <<<CGDB0204
+ ALTER TABLE `prefs` ADD `mastodon_client_secret` VARCHAR( 80 ) NOT NULL COMMENT 'mastodon app client_secret'
+CGDB0204;
+$cg_database_updates[67][] = <<<CGDB0205
+ ALTER TABLE `prefs` ADD `mastodon_access_token` VARCHAR( 80 ) NOT NULL COMMENT 'mastodon app access token'
+CGDB0205;
+$cg_database_updates[67][] = <<<CGDB0206
+ INSERT INTO `dbversion` ( `version` ) VALUES ( '68' )
+CGDB0206;
+//----------------------------------------------------------------------------------------------------------------
+
+//Version 68 to 69 -----------------------------------------------------------------------------------------------
+$cg_database_updates[68][] = <<<CGDB0207
+ CREATE TABLE IF NOT EXISTS `recentfiles_versions` (
+  `id` bigint(20) NOT NULL AUTO_INCREMENT,
+  `userid` varchar(64) CHARACTER SET latin1 COLLATE latin1_bin NOT NULL,
+  `url` varchar(767) CHARACTER SET latin1 COLLATE latin1_bin NOT NULL,
+  `title` varchar(512) CHARACTER SET latin1 COLLATE latin1_bin NOT NULL COMMENT 'Title of the file.',
+  `time` int(11) NOT NULL,
+  `outline` longtext CHARACTER SET latin1 COLLATE latin1_general_ci NOT NULL COMMENT 'The actual outline content.',
+  `disqus` tinyint(4) NOT NULL COMMENT 'Comments enabled?',
+  `wysiwyg` tinyint(4) NOT NULL COMMENT 'Wysiwyg enabled?',
+  `qrcode` varchar(767) NOT NULL COMMENT 'QR code for this outline url.',
+  `watched` tinyint(4) NOT NULL COMMENT 'watch this files links for changes?',
+  `articleid` varchar(128) NOT NULL COMMENT 'article id this file corresponds to',
+  `locked` tinyint(4) NOT NULL COMMENT 'Is this article locked?',
+  `type` int(11) NOT NULL,
+  `ipfshash` varchar(48) CHARACTER SET latin1 COLLATE latin1_bin NOT NULL,
+  PRIMARY KEY (`id`),
+  KEY `userid` (`userid`,`time`),
+  KEY `articleid` (`articleid`),
+  KEY `type` (`type`),
+  KEY `ipfshash` (`ipfshash`),
+  KEY `url` (`url`) USING BTREE
+) ENGINE=InnoDB DEFAULT CHARSET=latin1 COMMENT='Version history of recently saved files in the editor.'
+CGDB0207;
+$cg_database_updates[68][] = <<<CGDB0208
+ ALTER TABLE `recentfiles_versions` ADD CONSTRAINT `url_link` FOREIGN KEY (`url`) REFERENCES `recentfiles` (`url`) ON DELETE CASCADE ON UPDATE CASCADE
+CGDB0208;
+$cg_database_updates[68][] = <<<CGDB0209
+ INSERT INTO `dbversion` ( `version` ) VALUES ( '69' )
+CGDB0209;
+//----------------------------------------------------------------------------------------------------------------
+
+//Version 69 to 70 -----------------------------------------------------------------------------------------------
+$cg_database_updates[69][] = <<<CGDB0210
+ ALTER TABLE `recentfiles` ADD `private` TINYINT NOT NULL AFTER `ipfshash`
+CGDB0210;
+$cg_database_updates[69][] = <<<CGDB0211
+ ALTER TABLE `recentfiles_versions` ADD `private` TINYINT NOT NULL AFTER `ipfshash`
+CGDB0211;
+$cg_database_updates[69][] = <<<CGDB0212
+ INSERT INTO `dbversion` ( `version` ) VALUES ( '70' )
+CGDB0212;
+//----------------------------------------------------------------------------------------------------------------
+
+//Version 70 to 71 -----------------------------------------------------------------------------------------------
+$cg_database_updates[70][] = <<<CGDB0213
+ ALTER TABLE `recentfiles` ADD `privtoken` VARCHAR( 80 ) CHARACTER SET latin1 COLLATE latin1_bin NOT NULL COMMENT 'token for private access'
+CGDB0213;
+$cg_database_updates[70][] = <<<CGDB0214
+ ALTER TABLE `recentfiles_versions` ADD `privtoken` VARCHAR( 80 ) CHARACTER SET latin1 COLLATE latin1_bin NOT NULL COMMENT 'token for private access'
+CGDB0214;
+$cg_database_updates[70][] = <<<CGDB0215
+ INSERT INTO `dbversion` ( `version` ) VALUES ( '71' )
+CGDB0215;
+//----------------------------------------------------------------------------------------------------------------
+
+//Version 71 to 72 -----------------------------------------------------------------------------------------------
+$cg_database_updates[71][] = <<<CGDB0216
+  ALTER TABLE `recentfiles` ADD INDEX (`privtoken`)
+CGDB0216;
+$cg_database_updates[71][] = <<<CGDB0217
+  ALTER TABLE `recentfiles_versions` ADD INDEX (`privtoken`)
+CGDB0217;
+$cg_database_updates[71][] = <<<CGDB0218
+ INSERT INTO `dbversion` ( `version` ) VALUES ( '72' )
+CGDB0218;
+//----------------------------------------------------------------------------------------------------------------
+
+//Version 72 to 73 -----------------------------------------------------------------------------------------------
+$cg_database_updates[72][] = <<<CGDB0219
+ ALTER TABLE `newsfeeds` ADD `lasthttpstatus` INT NOT NULL
+CGDB0219;
+$cg_database_updates[72][] = <<<CGDB0220
+ ALTER TABLE `newsfeeds` ADD INDEX (`lasthttpstatus`)
+CGDB0220;
+$cg_database_updates[72][] = <<<CGDB0221
+ INSERT INTO `dbversion` ( `version` ) VALUES ( '73' )
+CGDB0221;
+//----------------------------------------------------------------------------------------------------------------
+
+//Version 73 to 74 -----------------------------------------------------------------------------------------------
+$cg_database_updates[73][] = <<<CGDB0222
+ ALTER TABLE `newsfeeds` ADD `lastgoodhttpstatus` INT NOT NULL
+CGDB0222;
+$cg_database_updates[73][] = <<<CGDB0223
+ INSERT INTO `dbversion` ( `version` ) VALUES ( '74' )
+CGDB0223;
+//----------------------------------------------------------------------------------------------------------------
+
+//Version 74 to 75 (does a reset on the newsfeed table to trigger refreshes on all error'd feeds) ----------------
+$cg_database_updates[74][] = <<<CGDB0224
+ UPDATE `newsfeeds` SET lastmod=0,errors=0
+CGDB0224;
+$cg_database_updates[74][] = <<<CGDB0225
+ INSERT INTO `dbversion` ( `version` ) VALUES ( '75' )
+CGDB0225;
+//----------------------------------------------------------------------------------------------------------------
+
+//Version 75 to 76 (need a way to denote dead SOPML feeds so they don't get removed by the cleaner) --------------
+$cg_database_updates[75][] = <<<CGDB0226
+ ALTER TABLE `newsfeeds` ADD `dead` TINYINT NOT NULL
+CGDB0226;
+$cg_database_updates[75][] = <<<CGDB0227
+ INSERT INTO `dbversion` ( `version` ) VALUES ( '76' )
+CGDB0227;
+//----------------------------------------------------------------------------------------------------------------
+
+//Version 76 to 77 -----------------------------------------------------------------------------------------------
+$cg_database_updates[76][] = <<<CGDB0228
+ ALTER TABLE `newsfeeds` ADD `contenttype` VARCHAR( 80 ) CHARACTER SET latin1 COLLATE latin1_general_ci NOT NULL COMMENT 'http response header'
+CGDB0228;
+$cg_database_updates[76][] = <<<CGDB0229
+ INSERT INTO `dbversion` ( `version` ) VALUES ( '77' )
+CGDB0229;
+//----------------------------------------------------------------------------------------------------------------
+
+//Version 77 to 78 -----------------------------------------------------------------------------------------------
+$cg_database_updates[77][] = <<<CGDB0230
+ ALTER TABLE `recentfiles` ADD `templatename` VARCHAR( 255 ) CHARACTER SET latin1 COLLATE latin1_bin NOT NULL COMMENT 'name of template'
+CGDB0230;
+$cg_database_updates[77][] = <<<CGDB0232
+ INSERT INTO `dbversion` ( `version` ) VALUES ( '78' )
+CGDB0232;
+//----------------------------------------------------------------------------------------------------------------
+
+//Version 78 to 79 -----------------------------------------------------------------------------------------------
+$cg_database_updates[78][] = <<<CGDB0233
+ ALTER TABLE `recentfiles_versions` ADD `templatename` VARCHAR( 255 ) CHARACTER SET latin1 COLLATE latin1_bin NOT NULL COMMENT 'name of template'
+CGDB0233;
+$cg_database_updates[78][] = <<<CGDB0234
+ INSERT INTO `dbversion` ( `version` ) VALUES ( '79' )
+CGDB0234;
+//----------------------------------------------------------------------------------------------------------------
+
+//Version 79 to 80 -----------------------------------------------------------------------------------------------
+$cg_database_updates[79][] = <<<CGDB0235
+ CREATE TABLE IF NOT EXISTS `recentfiles_variables` ( 
+  `id` BIGINT NOT NULL , 
+  `variable` VARCHAR(255) NOT NULL , 
+  `value` TEXT NOT NULL , 
+  `increment` TINYINT NOT NULL DEFAULT '0' , 
+  PRIMARY KEY (`id`), 
+  INDEX (`variable`)
+) ENGINE = InnoDB COMMENT = 'A history of previously used variables'
+CGDB0235;
+$cg_database_updates[79][] = <<<CGDB0236
+ ALTER TABLE `recentfiles_variables` ADD CONSTRAINT `id` FOREIGN KEY (`id`) REFERENCES `recentfiles`(`id`) ON DELETE CASCADE ON UPDATE CASCADE
+CGDB0236;
+$cg_database_updates[79][] = <<<CGDB0237
+ INSERT INTO `dbversion` ( `version` ) VALUES ( '80' )
+CGDB0237;
+//----------------------------------------------------------------------------------------------------------------
+
+//Version 80 to 81 -----------------------------------------------------------------------------------------------
+$cg_database_updates[80][] = <<<CGDB0238
+ ALTER TABLE `recentfiles_variables` DROP PRIMARY KEY, ADD INDEX (`id`) USING BTREE
+CGDB0238;
+$cg_database_updates[80][] = <<<CGDB0239
+ ALTER TABLE `recentfiles_variables` ADD PRIMARY KEY (`id`, `variable`) USING BTREE
+CGDB0239;
+$cg_database_updates[80][] = <<<CGDB0240
+ INSERT INTO `dbversion` ( `version` ) VALUES ( '81' )
+CGDB0240;
+//----------------------------------------------------------------------------------------------------------------
+
+//Version 81 to 82 -----------------------------------------------------------------------------------------------
+$cg_database_updates[81][] = <<<CGDB0241
+ ALTER TABLE `cartulary`.`recentfiles` ADD UNIQUE (`id`, `userid`)
+CGDB0241;
+$cg_database_updates[81][] = <<<CGDB0242
+ INSERT INTO `dbversion` ( `version` ) VALUES ( '82' )
+CGDB0242;
+//----------------------------------------------------------------------------------------------------------------
+
+//Version 82 to 83 -----------------------------------------------------------------------------------------------
+$cg_database_updates[82][] = <<<CGDB0243
+ ALTER TABLE `articles` MODIFY createdon INT NOT NULL
+CGDB0243;
+$cg_database_updates[82][] = <<<CGDB0244
+ ALTER TABLE `prefs` ADD `lastarticleimporttime` INT NOT NULL AFTER `mastodon_access_token`
+CGDB0244;
+$cg_database_updates[82][] = <<<CGDB0245
+ INSERT INTO `dbversion` ( `version` ) VALUES ( '83' )
+CGDB0245;
+//----------------------------------------------------------------------------------------------------------------
+
+//Version 83 to 84 -----------------------------------------------------------------------------------------------
+$cg_database_updates[83][] = <<<CGDB0246a
+ SET @old_sql_mode := @@sql_mode
+CGDB0246a;
+$cg_database_updates[83][] = <<<CGDB0246b
+ SET @new_sql_mode := @old_sql_mode
+CGDB0246b;
+$cg_database_updates[83][] = <<<CGDB0246c
+ SET @new_sql_mode := TRIM(BOTH ',' FROM REPLACE(CONCAT(',',@new_sql_mode,','),',NO_ZERO_DATE,'  ,','))
+CGDB0246c;
+$cg_database_updates[83][] = <<<CGDB0246d
+ SET @new_sql_mode := TRIM(BOTH ',' FROM REPLACE(CONCAT(',',@new_sql_mode,','),',NO_ZERO_IN_DATE,',','))
+CGDB0246d;
+$cg_database_updates[83][] = <<<CGDB0246e
+ SET @@sql_mode := @new_sql_mode
+CGDB0246e;
+$cg_database_updates[83][] = <<<CGDB0246
+ ALTER TABLE `nfitem_map` ADD `added` DATETIME NOT NULL COMMENT 'Date the word was first discovered',
+ ADD INDEX ( `added` )
+CGDB0246;
+$cg_database_updates[83][] = <<<CGDB0246f
+ SET @@sql_mode := @old_sql_mode
+CGDB0246f;
+$cg_database_updates[83][] = <<<CGDB0247
+ INSERT INTO `dbversion` ( `version` ) VALUES ( '84' )
+CGDB0247;
+//----------------------------------------------------------------------------------------------------------------
+
+//Version 84 to 85 -----------------------------------------------------------------------------------------------
+$cg_database_updates[84][] = <<<CGDB0248
+ ALTER TABLE `prefs` ADD `carttoken` VARCHAR( 64 ) CHARACTER SET latin1 COLLATE latin1_bin NOT NULL COMMENT 'Personal token for saving articles'
+CGDB0248;
+$cg_database_updates[84][] = <<<CGDB0249
+ INSERT INTO `dbversion` ( `version` ) VALUES ( '85' )
+CGDB0249;
+//----------------------------------------------------------------------------------------------------------------
+
+//Version 85 to 86 -----------------------------------------------------------------------------------------------
+$cg_database_updates[85][] = <<<CGDB0250
+ ALTER TABLE `prefs` ADD `ipinfotracker` TINYINT NOT NULL DEFAULT '0' COMMENT 'Show IP info in real-time'
+CGDB0250;
+$cg_database_updates[85][] = <<<CGDB0251
+ INSERT INTO `dbversion` ( `version` ) VALUES ( '86' )
+CGDB0251;
+//----------------------------------------------------------------------------------------------------------------
+
+//Version 86 to 87 -----------------------------------------------------------------------------------------------
+$cg_database_updates[86][] = <<<CGDB0252
+ ALTER TABLE `newsfeeds` ADD `duplicateof` VARCHAR(64) CHARACTER SET latin1 COLLATE latin1_bin NOT NULL COMMENT 'What feed id does this duplicate',
+ ADD INDEX (`duplicateof`)
+CGDB0252;
+$cg_database_updates[86][] = <<<CGDB0253
+ INSERT INTO `dbversion` ( `version` ) VALUES ( '87' )
+CGDB0253;
+//----------------------------------------------------------------------------------------------------------------
+
+//Version 87 to 88 -----------------------------------------------------------------------------------------------
+$cg_database_updates[87][] = <<<CGDB0254
+ UPDATE `newsfeeds` SET `url` = "http://localhost/adminlog-rss?t=$admin_feed_check_token" WHERE `url` = 'http://localhost/adminlog-rss'
+CGDB0254;
+$cg_database_updates[87][] = <<<CGDB0255
+ INSERT INTO `dbversion` ( `version` ) VALUES ( '88' )
+CGDB0255;
+//----------------------------------------------------------------------------------------------------------------
+
+//Version 88 to 89 -----------------------------------------------------------------------------------------------
+$cg_database_updates[88][] = <<<CGDB0256
+ ALTER TABLE `sysprefs` ADD `admin_feed_check_token` VARCHAR(64) NOT NULL DEFAULT '' COMMENT 'Token value for checking admin-log feed'
+CGDB0256;
+$cg_database_updates[88][] = <<<CGDB0257
+ INSERT INTO `dbversion` ( `version` ) VALUES ( '89' )
+CGDB0257;
+//----------------------------------------------------------------------------------------------------------------
+
+//Version 89 to 90 -----------------------------------------------------------------------------------------------
+$cg_database_updates[89][] = <<<CGDB0258
+ ALTER TABLE `sysprefs` ADD `system` TINYINT NOT NULL DEFAULT '1' FIRST, 
+ ADD UNIQUE (`system`)
+CGDB0258;
+$cg_database_updates[89][] = <<<CGDB0259
+ INSERT INTO `dbversion` ( `version` ) VALUES ( '90' )
+CGDB0259;
+//----------------------------------------------------------------------------------------------------------------
+
+//Version 90 to 91 -----------------------------------------------------------------------------------------------
+$cg_database_updates[90][] = <<<CGDB0260
+ DELETE FROM `newsfeeds` WHERE url LIKE '%http://localhost/adminlog-rss%'
+CGDB0260;
+$cg_database_updates[90][] = <<<CGDB0261
+ INSERT INTO `dbversion` ( `version` ) VALUES ( '91' )
+CGDB0261;
+//----------------------------------------------------------------------------------------------------------------
+
+//Version 91 to 92 -----------------------------------------------------------------------------------------------
+$cg_database_updates[91][] = <<<CGDB0262
+   ALTER TABLE `prefs` ADD `mastodon_filter_string` VARCHAR( 767 ) CHARACTER SET latin1 COLLATE latin1_general_cs NOT NULL COMMENT 'Only show toots that have this string.'
+CGDB0262;
+$cg_database_updates[91][] = <<<CGDB0263
+ INSERT INTO `dbversion` ( `version` ) VALUES ( '92' )
+CGDB0263;
+//----------------------------------------------------------------------------------------------------------------
+
+//Version 92 to 93 -----------------------------------------------------------------------------------------------
+$cg_database_updates[92][] = <<<CGDB0264
+ ALTER TABLE `prefs` ADD `s3key_assets` VARCHAR( 255 ) CHARACTER SET latin1 COLLATE latin1_bin NOT NULL COMMENT 'api key for assets bucket'
+CGDB0264;
+$cg_database_updates[92][] = <<<CGDB0265
+ ALTER TABLE `prefs` ADD `s3secret_assets` VARCHAR( 255 ) CHARACTER SET latin1 COLLATE latin1_bin NOT NULL COMMENT 'api secret for assets bucket'
+CGDB0265;
+$cg_database_updates[92][] = <<<CGDB0266
+ ALTER TABLE `prefs` ADD `s3bucket_assets` VARCHAR( 255 ) CHARACTER SET latin1 COLLATE latin1_bin NOT NULL COMMENT 's3 bucket for assets'
+CGDB0266;
+$cg_database_updates[92][] = <<<CGDB0267
+ ALTER TABLE `prefs` ADD `s3cname_assets` VARCHAR( 255 ) CHARACTER SET latin1 COLLATE latin1_bin NOT NULL COMMENT 's3 cname for assets'
+CGDB0267;
+$cg_database_updates[92][] = <<<CGDB0268
+ INSERT INTO `dbversion` ( `version` ) VALUES ( '93' )
+CGDB0268;
+//----------------------------------------------------------------------------------------------------------------
+
+//Version 93 to 94 -----------------------------------------------------------------------------------------------
+$cg_database_updates[93][] = <<<CGDB0269
+ ALTER TABLE `prefs` ADD `s3endpoint_assets` VARCHAR( 255 ) CHARACTER SET latin1 COLLATE latin1_bin NOT NULL COMMENT 'api endpoint url for assets bucket'
+CGDB0269;
+$cg_database_updates[93][] = <<<CGDB0270
+ ALTER TABLE `prefs` ADD `s3region_assets` VARCHAR( 255 ) CHARACTER SET latin1 COLLATE latin1_bin NOT NULL COMMENT 'api region for assets bucket'
+CGDB0270;
+$cg_database_updates[93][] = <<<CGDB0271
+ INSERT INTO `dbversion` ( `version` ) VALUES ( '94' )
+CGDB0271;
 //----------------------------------------------------------------------------------------------------------------
 //----------------------------------------------------------------------------------------------------------------
 

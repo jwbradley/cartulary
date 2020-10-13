@@ -19,13 +19,14 @@ function is_feed($content = NULL)
     //Load the content into a simplexml object
     libxml_use_internal_errors(true);
     $x = simplexml_load_string($content, 'SimpleXMLElement', LIBXML_NOCDATA);
-    libxml_clear_errors();
     if ($x === FALSE) {
-        loggit(1, "The content didn't parse correctly.");
+        loggit(2, "The content didn't parse correctly: [".libxml_get_last_error()->message."]");
+        libxml_clear_errors();
         return (FALSE);
     }
+    libxml_clear_errors();
 
-    //Look for opml nodes
+    //Look for xml type nodes
     if ((string)$x->getName() == "rss") {
         loggit(1, "Found a channel element. Looks like an RSS feed.");
         return ("application/rss+xml");
@@ -41,11 +42,43 @@ function is_feed($content = NULL)
 }
 
 
+//Test if the given content is an opml outline
+function is_jsonfeed($content = NULL)
+{
+    //Check parameters
+    if (empty($content)) {
+        loggit(2, "The content to test is blank or corrupt: [$content]");
+        return (FALSE);
+    }
+
+    //Includes
+    include get_cfg_var("cartulary_conf") . '/includes/env.php';
+
+    //Is it even json?
+    if( !is_json($content, FALSE)) {
+        loggit(2, "This feed is not valid jsonfeed.");
+        return (FALSE);
+    }
+
+    $jsonFeed = json_decode($content, TRUE);
+    //loggit(3, "JSONFEED: ".print_r($jsonFeed, TRUE));
+
+    //Look for key elements
+    if( !isset($jsonFeed['version']) ) return FALSE;
+    if( !isset($jsonFeed['title']) ) return FALSE;
+    if( !isset($jsonFeed['items']) ) return FALSE;
+
+    //None of the tests passed so return FALSE
+    loggit(1, "The content seems to be a valid jsonfeed.");
+    return ("application/json");
+}
+
+
 //Test if the given content is a valid feed
 function feed_is_valid($content = NULL)
 {
     //Check parameters
-    if ($content == NULL) {
+    if (empty($content)) {
         loggit(2, "The content to test is blank or corrupt: [$content]");
         return (FALSE);
     }
@@ -70,8 +103,14 @@ function feed_is_valid($content = NULL)
         return (TRUE);
     }
 
+    //See if it's JSONfeed
+    if (is_jsonfeed($content)) {
+        loggit(1, "This content is JSON. Assuming it's a JSONfeed.");
+        return (TRUE);
+    }
+
     //None of the tests passed so return FALSE
-    loggit(1, "The content tested was not a valid feed.");
+    loggit(2, "The content tested was not a valid feed.");
     return (FALSE);
 }
 
@@ -196,6 +235,7 @@ function get_feed_link($content = NULL)
 
 
 //Does the feed contain a source:avatar or sopml:avatar?
+//TODO: this function needs some serious updating
 function get_feed_avatar($x = NULL)
 {
     //Check parameters
@@ -214,7 +254,7 @@ function get_feed_avatar($x = NULL)
     if (!isset($namespaces['source'])) {
         //None of the tests passed so return FALSE
         loggit(1, "No microblog namespace defined for this feed.");
-        return (FALSE);
+        return ("");
     }
 
     //Search for an avatar
@@ -245,7 +285,7 @@ function get_feed_avatar($x = NULL)
 
     //None of the tests passed so return FALSE
     loggit(1, "Could not find an avatar for this feed.");
-    return (FALSE);
+    return ("");
 }
 
 
@@ -275,7 +315,7 @@ function feed_exists($url = NULL)
     //See if any rows came back
     if ($sql->num_rows() < 1) {
         $sql->close();
-        loggit(1, "The feed at url: [$url] does not exist in the repository.");
+        loggit(2, "The feed at url: [$url] does not exist in the repository.");
         return (FALSE);
     }
     $sql->bind_result($feedid) or loggit(2, "MySql error: " . $dbh->error);
@@ -283,7 +323,11 @@ function feed_exists($url = NULL)
     $sql->close();
 
     loggit(1, "The feed: [$feedid] at url: [$url] is already in the repository.");
-    return ($feedid);
+    if(!empty($feedid)) {
+        return ($feedid);
+    } else {
+        return FALSE;
+    }
 }
 
 
@@ -367,6 +411,7 @@ function get_river($uid = NULL, $mobile = FALSE)
 
     //Connect to the database server
     $dbh = new mysqli($dbhost, $dbuser, $dbpass, $dbname) or loggit(2, "MySql error: " . $dbh->error);
+    $dbh->set_charset("utf8");
 
     //Look for the sid in the session table
     if ($mobile == TRUE) {
@@ -397,7 +442,7 @@ function get_river($uid = NULL, $mobile = FALSE)
 
 
 //Get the river formatted in JSONP
-function get_river_as_json($uid = NULL, $mobile = FALSE)
+function get_river_as_json($uid = NULL, $mobile = FALSE, $pretty = FALSE)
 {
     //Check parameters
     if (empty($uid)) {
@@ -405,15 +450,18 @@ function get_river_as_json($uid = NULL, $mobile = FALSE)
         return (FALSE);
     }
 
-    return (json_encode(utf8ize(get_river($uid, $mobile))));
+    if($pretty) {
+        return(format_json(json_encode(utf8ize(get_river($uid, $mobile)))));
+    }
+    return(json_encode(utf8ize(get_river($uid, $mobile))));
 }
 
 
 //Retrieve an array of info about the feed
-function get_feed_info($id = NULL)
+function get_feed_info($id = NULL, $convert_content = TRUE)
 {
     //Check parameters
-    if ($id == NULL) {
+    if (empty($id)) {
         loggit(2, "The feed id given is corrupt or blank: [$id]");
         return (FALSE);
     }
@@ -426,20 +474,23 @@ function get_feed_info($id = NULL)
 
     //Look for the sid in the session table
     $stmt = "SELECT $table_newsfeed.url,
-		  $table_newsfeed.title,
-		  $table_newsfeed.content,
-		  $table_newsfeed.lastcheck,
-	          $table_newsfeed.lastupdate,
-                  $table_newsfeed.lastmod,
-                  $table_newsfeed.createdon,
-                  $table_newsfeed.link,
-                  $table_newsfeed.updated,
-                  $table_newsfeed.lastitemid,
-                  $table_newsfeed.oid,
-		  $table_newsfeed.pubdate,
-                  $table_newsfeed.errors,
-                  $table_newsfeed.avatarurl,
-		  $table_newsfeed.id
+		            $table_newsfeed.title,
+		            $table_newsfeed.content,
+		            $table_newsfeed.lastcheck,
+	                $table_newsfeed.lastupdate,
+                    $table_newsfeed.lastmod,
+                    $table_newsfeed.createdon,
+                    $table_newsfeed.link,
+                    $table_newsfeed.updated,
+                    $table_newsfeed.lastitemid,
+                    $table_newsfeed.oid,
+		            $table_newsfeed.pubdate,
+                    $table_newsfeed.errors,
+                    $table_newsfeed.avatarurl,
+		            $table_newsfeed.id,
+		            $table_newsfeed.type,
+		            $table_newsfeed.lasthttpstatus,
+		            $table_newsfeed.lastgoodhttpstatus
            FROM $table_newsfeed
            WHERE $table_newsfeed.id=?";
 
@@ -457,9 +508,19 @@ function get_feed_info($id = NULL)
     $feed = array();
     $sql->bind_result($feed['url'], $feed['title'], $feed['content'], $feed['lastcheck'], $feed['lastupdate'],
         $feed['lastmod'], $feed['createdon'], $feed['link'], $feed['updated'], $feed['lastitemid'], $feed['oid'],
-        $feed['pubdate'], $feed['errors'], $feed['avatarurl'], $feed['id']) or loggit(2, "MySql error: " . $dbh->error);
+        $feed['pubdate'], $feed['errors'], $feed['avatarurl'], $feed['id'], $feed['type'], $feed['lasthttpstatus'],
+        $feed['lastgoodhttpstatus']) or loggit(2, "MySql error: " . $dbh->error);
     $sql->fetch() or loggit(2, "MySql error: " . $dbh->error);
     $sql->close();
+
+    $feed['subscribers'] = get_feed_subscribers($id);
+    $feed['subscribercount'] = count($feed['subscribers']);
+
+    //JSONfeed
+    if ($feed['type'] == 1 && $convert_content) {
+        loggit(3, "Converting JSONfeed to RSS for feed: [".$feed['url']."]");
+        $feed['content'] = convert_jsonfeed_to_rss($feed['content']);
+    }
 
     //loggit(1,"Returning feed info for feed: [$id]");
     return ($feed);
@@ -542,10 +603,9 @@ function add_feed($url = NULL, $uid = NULL, $get = FALSE, $oid = NULL, $type = 0
     }
 
     //Does this feed exist already?
+    $existed = FALSE;
     $fid = feed_exists($url);
-    if ($fid == FALSE) {
-        $existed = FALSE;
-        //Now that we have a good id, put the article into the database
+    if (!$fid) {
         $stmt = "INSERT INTO $table_newsfeed (id,url,createdon, type) VALUES (?,?,?,?)";
         $sql = $dbh->prepare($stmt) or loggit(2, "MySql error: " . $dbh->error);
         $sql->bind_param("ssdd", $id, $url, $createdon, $type) or loggit(2, "MySql error: " . $dbh->error);
@@ -553,6 +613,7 @@ function add_feed($url = NULL, $uid = NULL, $get = FALSE, $oid = NULL, $type = 0
         $sql->close();
     } else {
         $existed = TRUE;
+        unmark_feed_as_dead($fid);
         $id = $fid;
     }
 
@@ -564,6 +625,10 @@ function add_feed($url = NULL, $uid = NULL, $get = FALSE, $oid = NULL, $type = 0
     //Link this feed to an outline if that was requested
     if ($oid != NULL) {
         link_feed_to_outline($id, $oid, $uid);
+    }
+
+    if(!$existed) {
+        fetch_feed_content($id, TRUE);
     }
 
     //Was feed item retrieval requested?
@@ -861,11 +926,15 @@ function update_feed_lastupdate($fid = NULL, $time = NULL)
 
 
 //Increment the error count on this feed
-function increment_feed_error_count($fid = NULL)
+function increment_feed_error_count($fid = NULL, $amount = 1)
 {
     //Check parameters
     if (empty($fid)) {
         loggit(2, "The feed id is blank or corrupt: [$fid]");
+        return (FALSE);
+    }
+    if ($amount < 1) {
+        loggit(2, "You can't increment the feed error count by a non-positive number: [$amount]");
         return (FALSE);
     }
 
@@ -876,9 +945,9 @@ function increment_feed_error_count($fid = NULL)
     $dbh = new mysqli($dbhost, $dbuser, $dbpass, $dbname) or loggit(2, "MySql error: " . $dbh->error);
 
     //Now that we have a good id, put the article into the database
-    $stmt = "UPDATE $table_newsfeed SET errors=errors+1 WHERE id=?";
+    $stmt = "UPDATE $table_newsfeed SET errors=errors+? WHERE id=?";
     $sql = $dbh->prepare($stmt) or loggit(2, "MySql error: " . $dbh->error);
-    $sql->bind_param("s", $fid) or loggit(2, "MySql error: " . $dbh->error);
+    $sql->bind_param("ds", $amount, $fid) or loggit(2, "MySql error: " . $dbh->error);
     $sql->execute() or loggit(2, "MySql error: " . $dbh->error);
     $sql->close();
 
@@ -935,7 +1004,7 @@ function reset_feed_error_count($fid = NULL)
     //Connect to the database server
     $dbh = new mysqli($dbhost, $dbuser, $dbpass, $dbname) or loggit(2, "MySql error: " . $dbh->error);
 
-    //Now that we have a good id, put the article into the database
+    //Run the query
     $stmt = "UPDATE $table_newsfeed SET errors=0 WHERE id=?";
     $sql = $dbh->prepare($stmt) or loggit(2, "MySql error: " . $dbh->error);
     $sql->bind_param("s", $fid) or loggit(2, "MySql error: " . $dbh->error);
@@ -1086,7 +1155,67 @@ function unmark_feed_as_updated($fid = NULL)
     $stmt = "UPDATE $table_newsfeed SET updated=0 WHERE id=?";
     $sql = $dbh->prepare($stmt) or loggit(3, $dbh->error);
     $sql->bind_param("s", $fid) or loggit(2, "MySql error: " . $dbh->error);
+
+    $sql->execute();// or loggit(2, "MySql error: " . $dbh->error);
+    $updcount = $sql->affected_rows;
+    $sql->close();
+
+    //Log and return
+    //loggit(3,"Cleared update flag on feed: [$fid].");
+    return ($updcount);
+}
+
+
+//Flip the flag on a newsfeed to make it known that it is dead and should never be checked
+function mark_feed_as_dead($fid = NULL)
+{
+    //Check parameters
+    if ($fid == NULL) {
+        loggit(2, "The feed id is blank or corrupt: [$fid]");
+        return (FALSE);
+    }
+
+    //Includes
+    include get_cfg_var("cartulary_conf") . '/includes/env.php';
+
+    //Connect to the database server
+    $dbh = new mysqli($dbhost, $dbuser, $dbpass, $dbname) or loggit(2, "MySql error: " . $dbh->error);
+
+    //Run the query
+    $stmt = "UPDATE $table_newsfeed SET dead=1 WHERE id=?";
+    $sql = $dbh->prepare($stmt) or loggit(3, $dbh->error);
+    $sql->bind_param("s", $fid) or loggit(2, "MySql error: " . $dbh->error);
     $sql->execute() or loggit(2, "MySql error: " . $dbh->error);
+    $updcount = $sql->affected_rows;
+    $sql->close();
+
+    //Log and return
+    loggit(1, "Flagged feed: [$fid] as dead.");
+    return ($updcount);
+}
+
+
+//Flip the flag on a newsfeed to make it known that it is not dead and should be checked
+function unmark_feed_as_dead($fid = NULL)
+{
+    //Check parameters
+    if ($fid == NULL) {
+        loggit(2, "The feed id is blank or corrupt: [$fid]");
+        return (FALSE);
+    }
+
+    //Includes
+    include get_cfg_var("cartulary_conf") . '/includes/env.php';
+
+    //Connect to the database server
+    $dbh = new mysqli($dbhost, $dbuser, $dbpass, $dbname) or loggit(2, "MySql error: " . $dbh->error);
+
+    //Run the query
+    $stmt = "UPDATE $table_newsfeed SET dead=0 WHERE id=?";
+    $sql = $dbh->prepare($stmt) or loggit(3, $dbh->error);
+    $sql->bind_param("s", $fid) or loggit(2, "MySql error: " . $dbh->error);
+
+    $sql->execute();// or loggit(2, "MySql error: " . $dbh->error);
     $updcount = $sql->affected_rows;
     $sql->close();
 
@@ -1517,6 +1646,37 @@ function delete_feed_items($fid = NULL)
 }
 
 
+//Remove the sticky flags for all of a user's feed items
+function unmark_all_feed_items_as_sticky($uid = NULL)
+{
+    //Check params
+    if (empty($uid)) {
+        loggit(2, "The user id is blank or corrupt: [$uid]");
+        return (FALSE);
+    }
+
+    //Includes
+    include get_cfg_var("cartulary_conf") . '/includes/env.php';
+
+    //Connect to the database server
+    $dbh = new mysqli($dbhost, $dbuser, $dbpass, $dbname) or loggit(2, "MySql error: " . $dbh->error);
+
+    //Look for the id in the transaction table
+    $stmt = "DELETE FROM nfitemprops WHERE userid=? AND sticky=1";
+    $sql = $dbh->prepare($stmt) or loggit(2, "MySql error: " . $dbh->error);
+    $sql->bind_param("s", $uid) or loggit(2, "MySql error: " . $dbh->error);
+    $sql->execute() or loggit(2, "MySql error: " . $dbh->error);
+    $delcount = $sql->affected_rows;
+    $sql->close();
+
+    //Log and leave
+    if ($delcount > 0) {
+        loggit(1, "Unmarked: [$delcount] items as sticky for user: [$uid].");
+    }
+    return ($delcount);
+}
+
+
 //Delete a feed
 function delete_feed($fid = NULL)
 {
@@ -1587,7 +1747,7 @@ function fetch_feed_content($fid = NULL, $force = TRUE)
         update_feed_lastmod($fid, $lastmodtime);
     }
     $goodurl = get_final_url($url);
-    if ($goodurl != $url) {
+    if ($goodurl != $url && stripos($goodurl, 'http') === 0) {
         loggit(3, "Changing feed url: [$url] to: [$goodurl].");
         update_feed_url($fid, $goodurl);
     }
@@ -1638,96 +1798,218 @@ function get_feed_items($fid = NULL, $max = NULL, $force = FALSE)
     $fstart = time();
     $url = $feed['url'];
 
+    loggit(1, "FEEDSCAN: Scanning feed: [$url].");
+
+    //Pull the latest content blob from the database
+    if( empty($feed['content']) && !empty($feed['lastcheck']) ) {
+        loggit(2, "  Feed: [$url] has no content: [".$feed['content']."]");
+        //Set the last check time in the stats
+        $stats['checktime'] += (time() - $fstart);
+        set_feed_stats($fid, $stats);
+        //Increment the error count
+        increment_feed_error_count($fid);
+        return (-1);
+    }
+
+    //Fix up content issues before run
+    loggit(1, "Fixing up common structural problems in feed: [$url]");
+    $feed['content'] = trim($feed['content']);
+    $invalid_characters = '/[^\x9\xa\x20-\xD7FF\xE000-\xFFFD]/';
+    $feed['content'] = preg_replace($invalid_characters, '', $feed['content'] );
+
+    //Remove content before the <?xml declaration
+    $elPos = stripos(substr($feed['content'], 0, 255), '<?xml');
+    if($elPos > 0) {
+        loggit(2, "  Removing stuff before the <?xml header in: [$url]");
+        $feed['content'] = substr($feed['content'], $elPos);
+    }
+
+    //Remove stuff after the closing xml root tags
+    $elPos = stripos($feed['content'], '</rss>');
+    if($elPos !== FALSE) {
+        $feed['content'] = substr($feed['content'], 0, $elPos + 6);
+    }
+    $elPos = stripos($feed['content'], '</feed>');
+    if($elPos !== FALSE) {
+        $feed['content'] = substr($feed['content'], 0, $elPos + 7);
+    }
+
+    //Fix feeds that don't have a correct <?xml prefix at the beginning
+    $tstart = time();
+    if(stripos(substr($feed['content'], 0, 255), '<?xml') === FALSE) {
+        loggit(2, "  Missing <?xml> header in feed: [$url]. Let's dig deeper...");
+
+        $elPos = stripos(substr($feed['content'], 0, 255), '<rss');
+        if($elPos !== FALSE) {
+            loggit(1, "    Fixing missing <?xml> header in RSS feed: [$url]");
+            $feed['content'] = "<?xml version=\"1.0\"?>\n".substr($feed['content'], $elPos);
+        }
+        $elPos = stripos(substr($feed['content'], 0, 255), '<feed');
+        if($elPos !== FALSE) {
+            loggit(1, "    Fixing missing <?xml> header in RSS feed: [$url]");
+            $feed['content'] = "<?xml version=\"1.0\"?>\n".substr($feed['content'], $elPos);
+        }
+    }
+    if((time() - $tstart) > 5) {
+        loggit(1, "Fixed feed: [$url] in [".(time() - $tstart)."] seconds.");
+    }
+
+    //Debug
+    //loggit(3, "DEBUG: [".$feed['content']."]");
+
     //Only get the first few entries if this is a new feed
     if (empty($feed['lastcheck'])) {
         $max = $default_new_subscription_item_count;
     }
 
-    //Pull the latest content blob from the database
-    if( empty($feed['content']) ) {
-        loggit(2, "Feed: [$fid] has no content.");
-        $stats['checktime'] += (time() - $fstart);
-        set_feed_stats($fid, $stats);
-        return (-1);
-    }
+    //Set the last check time in the stats
+    $stats['checktime'] += (time() - $fstart);
+    set_feed_stats($fid, $stats);
 
     //Is the feed any good?
-    if (!feed_is_valid($feed['content'])) {
-        loggit(2, "Feed: [$fid] doesn't seem to be a known feed format. Skipping it.");
-        set_feed_error_count($fid, 100);
-        return (-1);
+    if (!feed_is_valid($feed['content']) && !is_feed($feed['content'])) {
+        //Fix stray ampersands in the xml
+        if( stripos($feed['content'], '& ') !== FALSE ) {
+            $feed['content'] = preg_replace('/\&\s/m', '&amp; ', $feed['content']);
+            loggit(2, "    Fixing poorly encoded entities (&,<,>) in XML feed: [$url]");
+            if(!feed_is_valid($feed['content']) && !is_feed($feed['content'])) {
+                //Try to correct the encoding
+                if( stripos($feed['content'], 'encoding="utf-8"') && mb_detect_encoding($feed['content'], 'UTF-8', true) === FALSE ) {
+                    $feed['content'] = utf8_encode($feed['content']);
+                    if(!feed_is_valid($feed['content']) && !is_feed($feed['content'])) {
+                        loggit(2, "  Feed: [" . $url . "] doesn't seem to be a known feed format. Skipping it. (1)");
+                        increment_feed_error_count($fid, 5);
+                        return (-1);
+                    }
+                } else {
+                    loggit(2, "  Feed: [" . $url . "] doesn't seem to be a known feed format. Skipping it. (2)");
+                    increment_feed_error_count($fid, 5);
+                    return (-1);
+                }
+            }
+        }
     }
 
     //Parse it
     $tstart = time();
     libxml_use_internal_errors(true);
     $x = simplexml_load_string($feed['content'], 'SimpleXMLElement', LIBXML_NOCDATA);
-    libxml_clear_errors();
     //loggit(3, "FEED SCAN: SimpleXML parse load took [".(time() - $tstart)."] seconds.");
 
     //Was there a fatal error during parsing?
     if (!$x) {
-        loggit(1, "Failed to parse XML for feed: [$fid].  Let's run it through Tidy() and try again.");
+        loggit(2, "  Error parsing feed: [$url] Error: [".libxml_get_last_error()->message."]");
+        loggit(1, "  Failed to parse XML for feed: [$url].  Let's run it through Tidy() and try again.");
+        libxml_clear_errors();
         $tidy = new tidy();
         $xr = $tidy->repairString($feed['content'], array('output-xml' => true, 'input-xml' => true));
         libxml_use_internal_errors(true);
         $x = simplexml_load_string($xr, 'SimpleXMLElement', LIBXML_NOCDATA);
-        libxml_clear_errors();
         if (!$x) {
-            loggit(1, "Error parsing feed XML for feed: [$fid].  Incrementing error count and skipping feed: [$fid].");
-            $stats['checktime'] += (time() - $fstart);
-            set_feed_stats($fid, $stats);
-            increment_feed_error_count($fid);
+            loggit(2, "  Error parsing feed XML for feed: [$url].  Error: [".libxml_get_last_error()->message."]");
+            libxml_clear_errors();
+            increment_feed_error_count($fid, 5);
             return (-1);
         }
+        libxml_clear_errors();
     }
-
-    //Look for some kind of publish date
-    if (!empty($x->channel->pubDate)) {
-        $pubdate = $x->channel->pubDate;
-    } else
-    if (!empty($x->channel->lastBuildDate)) {
-        $pubdate = $x->channel->lastBuildDate;
-    } else
-    if (!empty($x->updated)) {
-        $pubdate = $x->updated;
-    } else {
-        $pubdate = time();
-    }
-    loggit(1, "DEBUG: Pubdate: [$pubdate]");
-    if ($feed['pubdate'] == $pubdate && !empty($pubdate) && $force == FALSE) {
-        //The feed says that it hasn't been updated
-        loggit(1, "The pubdate in the feed has not changed.");
-        $stats['checktime'] += (time() - $fstart);
-        set_feed_stats($fid, $stats);
-        //return (-3);
-    }
-    update_feed_pubdate($fid, $pubdate);
-
-    //Freshen feed title
-    if (isset($x->channel->title)) {
-        $ftitle = $x->channel->title;
-    } else {
-        $ftitle = $x->title;
-    }
-    update_feed_title($fid, $ftitle);
-
-    //Freshen feed link
-    if (isset($x->channel->link)) {
-        $flink = $x->channel->link;
-    } else {
-        $flink = (string)$x->link->attributes()->href;
-    }
-    update_feed_link($fid, $flink);
-
-    //Freshen feed avatar
-    update_feed_avatar($fid, get_feed_avatar($x));
+    libxml_clear_errors();
 
     //Pass any namespaces to the item add routine
     $namespaces = $x->getDocNamespaces(TRUE);
 
+    //Look for some kind of publish date
+    $pubdate = time();
+    $pubdatesource = "fallback to time()";
+    if (isset($x->channel->pubDate) && !empty((string)$x->channel->pubDate)) {
+        //Channel date for rss2 feed
+        $pubdate = (string)$x->channel->pubDate;
+        $pubdatesource = "RSS2.0 Channel <pubDate> value";
+    } else
+    if (isset($x->channel->lastBuildDate) && !empty($x->channel->lastBuildDate)) {
+        //Channel build date for rss2 feed
+        $pubdate = (string)$x->channel->lastBuildDate;
+        $pubdatesource = "RSS2.0 Channel <lastBuildDate> value";
+    } else
+    if (isset($namespaces['dc']) && isset($x->children($namespaces['dc'])->date) && !empty($x->children($namespaces['dc'])->date)) {
+        //Channel date for RDF(rss1) feed
+        $pubdate = (string)$x->children($namespaces['dc'])->date;
+        $pubdatesource = "RSS1/RDF feed level <dc:date> value";
+    } else
+    if (isset($x->updated) && !empty($x->updated)) {
+        //Channel date for atom feed
+        $pubdate = (string)$x->updated;
+        $pubdatesource = "ATOM feed level <updated> value";
+    } else {
+        //We didn't get a feed level date, so dig into the items for dates
+        if(isset($x->channel->item[0]) && isset($x->channel->item[0]->pubDate) && !empty($x->channel->item[0]->pubDate)) {
+            //First item in rss2 feed
+            $pubdate = (string)$x->channel->item[0]->pubDate;
+            $pubdatesource = "RSS2.0 first item <pubDate> value";
+        } else
+        if(isset($x->item[0]) && isset($namespaces['dc']) && isset($x->item[0]->children($namespaces['dc'])->date) && !empty($x->item[0]->children($namespaces['dc'])->date)) {
+            //First item in RDF(rss1) feed
+            $pubdate = (string)$x->item[0]->children($namespaces['dc'])->date;
+            $pubdatesource = "RSS1/RDF first item <dc:date> value";
+        } else
+        if(isset($x->item[0]) && isset($x->item[0]->date) && !empty($x->item[0]->date)) {
+            //First item in RDF(rss1) feeds that dont follow spec
+            $pubdate = (string)$x->item[0]->date;
+            $pubdatesource = "RSS1/RDF first item <date> value";
+        } else
+        if(isset($x->entry[0]) && isset($x->entry[0]->updated) && !empty($x->entry[0]->updated)) {
+            //First item in atom feed
+            $pubdate = (string)$x->entry[0]->updated;
+            $pubdatesource = "ATOM first item <updated> value";
+        }
+    }
+    $pubdate = trim($pubdate);
+    //loggit(3, "DEBUG: Pubdate: [$pubdate]");
+    if (trim($feed['pubdate']) == $pubdate && !empty($pubdate) && $force == FALSE) {
+        //The feed says that it hasn't been updated
+        //loggit(3, "  PUBDATE: [$pubdate | ".$feed['pubdate']."] Source: [$pubdatesource] not changed.");
+        reset_feed_error_count($fid);
+        unmark_feed_as_dead($fid);
+        return (-3);
+    }
+    loggit(1, "  PUBDATE: [$pubdate | ".$feed['pubdate']."] Source: [$pubdatesource] changed.");
+    update_feed_pubdate($fid, $pubdate);
+
+    //Freshen feed title
+    $ftitle = parse_url($url, PHP_URL_HOST);
+    if (isset($x->channel) && isset($x->channel->title)) {
+        $ftitle = $x->channel->title;
+    }
+    if (isset($x->title)) {
+        $ftitle = $x->title;
+    }
+    if( $ftitle != $feed['title'] ) {
+        update_feed_title($fid, trim($ftitle));
+    }
+
+    //Freshen feed link
+    $flink = parse_url($url, PHP_URL_HOST);
+    if (isset($x->channel) && isset($x->channel->link)) {
+        $flink = $x->channel->link;
+    }
+    if (isset($x->link) && isset($x->link->attributes()->href)) {
+        $flink = (string)$x->link->attributes()->href;
+    }
+    if( $flink != $feed['link'] ) {
+        update_feed_link($fid, trim($flink));
+    }
+
+    //Freshen feed avatar
+    $avatarurl = get_feed_avatar($x);
+    if($avatarurl != $feed['avatarurl']) {
+        update_feed_avatar($fid, trim($avatarurl));
+    }
+
     //Mark all of this feed's items as purge
     mark_all_feed_items_to_purge($fid);
+
+    //Get all of the feed item guids
+    $guids = get_feed_item_guids_by_feed_id($fid);
 
     //Put all of the items in an array
     $tstart = time();
@@ -1736,9 +2018,11 @@ function get_feed_items($fid = NULL, $max = NULL, $force = FALSE)
     $newcount = 0;
     if (strtolower($x->getName()) == "rdf") {
         //Probably an RDF feed
+        loggit(1, "RDF Feed: ".$ftitle);
         foreach ($x->item as $entry) {
             $items[$count] = $entry;
-            if (!feed_item_exists($fid, get_unique_id_for_feed_item($entry))) { //testing
+            $guid = get_unique_id_for_rdf_feed_item($entry, $namespaces);
+            if (array_search($guid, $guids) === FALSE) {
                 update_feed_lastupdate($fid, time());
                 add_feed_item($fid, $entry, "rss", $namespaces);
                 $newcount++;
@@ -1755,7 +2039,8 @@ function get_feed_items($fid = NULL, $max = NULL, $force = FALSE)
         //This is an atom feed
         foreach ($x->entry as $entry) {
             $items[$count] = $entry;
-            if (!feed_item_exists($fid, $entry->id)) { //testing
+            $guid = $entry->id;
+            if (array_search($guid, $guids) === FALSE) { //testing
                 update_feed_lastupdate($fid, time());
                 add_feed_item($fid, $entry, "atom", $namespaces);
                 $newcount++;
@@ -1771,7 +2056,8 @@ function get_feed_items($fid = NULL, $max = NULL, $force = FALSE)
         //This is an rss feed
         foreach ($x->channel->item as $entry) {
             $items[$count] = $entry;
-            if (!feed_item_exists($fid, get_unique_id_for_feed_item($entry))) { //testing
+            $guid = get_unique_id_for_feed_item($entry);
+            if (array_search($guid, $guids) === FALSE) {
                 update_feed_lastupdate($fid, time());
                 add_feed_item($fid, $entry, "rss", $namespaces);
                 $newcount++;
@@ -1784,7 +2070,7 @@ function get_feed_items($fid = NULL, $max = NULL, $force = FALSE)
             $count++;
         }
     }
-    //loggit(3, "FEED SCAN: Feed item storage took [".(time() - $tstart)."] seconds.");
+    loggit(1, "  Feed item storage took [".(time() - $tstart)."] seconds.");
 
     //Flip the purge flags to old
     flip_purge_to_old($fid);
@@ -1792,10 +2078,8 @@ function get_feed_items($fid = NULL, $max = NULL, $force = FALSE)
     //Delete old items
     delete_old_feed_items($fid);
 
-    //Evidently the scan was successful so reset the error counter
-    reset_feed_error_count($fid);
-
     //Calculate new stats for this feed
+    //TODO: check for divide by zero in these calcs
     $stats['checktime'] += (time() - $fstart);
     $stats['avgchecktime'] = ($stats['checktime'] / $stats['checkcount']);
     $stats['newitems'] += $newcount;
@@ -1804,20 +2088,25 @@ function get_feed_items($fid = NULL, $max = NULL, $force = FALSE)
     $stats['lastnewtime'] = $fstart;
     set_feed_stats($fid, $stats);
 
+    //Evidently the scan was successful so reset the error counter
+    reset_feed_error_count($fid);
+    unmark_feed_as_dead($fid);
+
     //Is the feed empty?
     if ($count == 0) {
-        loggit(3, "Scan: There were no items in this feed: [$url].");
+        loggit(1, "  DONE: There were no items in this feed: [$url].");
+        //increment_feed_error_count($fid, 1);
         return (-2);
     }
 
     //Log and leave
-    loggit(1, "Scan: [$newcount] out of: [$count] items from feed: [$url] were new.");
+    loggit(3, "  DONE: [$newcount] out of: [$count] items from feed: [$url] were new.");
     return ($newcount);
 }
 
 
 //Retrieve a list of all the feeds in the database
-function get_all_feeds($max = NULL, $witherrors = FALSE, $withold = FALSE)
+function get_all_feeds($max = NULL, $witherrors = FALSE, $withold = FALSE, $withdead = FALSE)
 {
     //Includes
     include get_cfg_var("cartulary_conf") . '/includes/env.php';
@@ -1841,6 +2130,11 @@ function get_all_feeds($max = NULL, $witherrors = FALSE, $withold = FALSE)
     //Include old feeds?
     if ($withold == FALSE) {
         $sqltxt .= " AND (lastupdate > $monthago OR lastcheck = 0)";
+    }
+
+    //Include dead feeds?
+    if ($withdead == FALSE) {
+        $sqltxt .= " AND dead=0";
     }
 
     //Sort by last check time
@@ -1868,7 +2162,12 @@ function get_all_feeds($max = NULL, $witherrors = FALSE, $withold = FALSE)
     $feeds = array();
     $count = 0;
     while ($sql->fetch()) {
-        $feeds[$count] = array('id' => $fid, 'title' => $ftitle, 'url' => $furl, 'createdon' => $fcreatedon);
+        $feeds[$count] = array(
+            'id' => $fid,
+            'title' => $ftitle,
+            'url' => $furl,
+            'createdon' => $fcreatedon
+        );
         $count++;
     }
 
@@ -1879,7 +2178,200 @@ function get_all_feeds($max = NULL, $witherrors = FALSE, $withold = FALSE)
 }
 
 
-//Retrieve a list of all the feeds in the database
+//Retrieve a list of all the feed items in the database
+function get_all_feed_item_ids($max = NULL)
+{
+    //Includes
+    include get_cfg_var("cartulary_conf") . '/includes/env.php';
+
+    //Connect to the database server
+    $dbh = new mysqli($dbhost, $dbuser, $dbpass, $dbname) or loggit(2, "MySql error: " . $dbh->error);
+
+    //Get all feed items up to max
+    $sqltxt = "SELECT id FROM $table_nfitem";
+
+    //Work newest to oldest
+    $sqltxt .= " ORDER BY id";
+
+    //Max given?
+    if ( !empty($max) && is_numeric($max) ) {
+        $sqltxt .= " LIMIT $max";
+    }
+
+    //Run the query
+    $sql = $dbh->prepare($sqltxt) or loggit(2, "MySql error: " . $dbh->error);
+    $sql->execute() or loggit(2, "MySql error: " . $dbh->error);
+    $sql->store_result() or loggit(2, "MySql error: " . $dbh->error);
+
+    //See if there were any feed items returned
+    if ($sql->num_rows() < 1) {
+        $sql->close()
+        or loggit(2, "MySql error: " . $dbh->error);
+        loggit(2, "There are no feed items in the system.");
+        return (array());
+    }
+
+    $sql->bind_result($iid) or loggit(2, "MySql error: " . $dbh->error);
+
+    $items = array();
+    $count = 0;
+    while ($sql->fetch()) {
+        $items[] = $iid;
+        $count++;
+    }
+
+    $sql->close();
+
+    loggit(1, "Returning: [$count] feed items in the system.");
+    return ($items);
+}
+
+
+//Retrieve details of a certain feed item
+function get_feed_item($id = NULL)
+{
+    //Check parameters
+    if (empty($id)) {
+        loggit(2, "The id is blank or corrupt: [$id]");
+        return (FALSE);
+    }
+
+    //Includes
+    include get_cfg_var("cartulary_conf") . '/includes/env.php';
+
+    //Connect to the database server
+    $dbh = new mysqli($dbhost, $dbuser, $dbpass, $dbname) or loggit(2, "MySql error: " . $dbh->error);
+
+    //Get all feed items up to max
+    $sqltxt = "SELECT id,title,url,description FROM $table_nfitem WHERE id=?";
+
+    //Run the query
+    $sql = $dbh->prepare($sqltxt) or loggit(2, "MySql error: " . $dbh->error);
+    $sql->bind_param("s", $id) or loggit(2, "MySql error: " . $dbh->error);
+    $sql->execute() or loggit(2, "MySql error: " . $dbh->error);
+    $sql->store_result() or loggit(2, "MySql error: " . $dbh->error);
+
+    //See if there were any feed items returned
+    if ($sql->num_rows() < 1) {
+        $sql->close()
+        or loggit(2, "MySql error: " . $dbh->error);
+        loggit(2, "No feed item found.");
+        return (array());
+    }
+
+    $sql->bind_result($iid, $ititle, $iurl, $idescription) or loggit(2, "MySql error: " . $dbh->error);
+
+    $items = array();
+    $count = 0;
+    while ($sql->fetch()) {
+        $items[$count] = array('id' => $iid, 'title' => $ititle, 'url' => $iurl, 'description' => $idescription);
+        $count++;
+    }
+
+    $sql->close();
+
+    loggit(1, "Returning feed item: [$id].");
+    return ($items[0]);
+}
+
+
+//Retrieve details for a list of items
+//  !!!!! new function incomplete !!!!!! //
+function get_nfitems($ids = NULL)
+{
+    //Check parameters
+    if (empty($ids) || !is_array($ids)) {
+        loggit(2, "The id is blank or corrupt: [$id]");
+        return (FALSE);
+    }
+
+    //Includes
+    include get_cfg_var("cartulary_conf") . '/includes/env.php';
+
+    //Connect to the database server
+    $dbh = new mysqli($dbhost, $dbuser, $dbpass, $dbname) or loggit(2, "MySql error: " . $dbh->error);
+
+    //Get all feed items up to max
+    $sqltxt = "SELECT id,title,url,description FROM $table_nfitem WHERE id=?";
+
+    //Run the query
+    $sql = $dbh->prepare($sqltxt) or loggit(2, "MySql error: " . $dbh->error);
+    $sql->bind_param("s", $id) or loggit(2, "MySql error: " . $dbh->error);
+    $sql->execute() or loggit(2, "MySql error: " . $dbh->error);
+    $sql->store_result() or loggit(2, "MySql error: " . $dbh->error);
+
+    //See if there were any feed items returned
+    if ($sql->num_rows() < 1) {
+        $sql->close()
+        or loggit(2, "MySql error: " . $dbh->error);
+        loggit(2, "No feed item found.");
+        return (array());
+    }
+
+    $sql->bind_result($iid, $ititle, $iurl, $idescription) or loggit(2, "MySql error: " . $dbh->error);
+
+    $items = array();
+    $count = 0;
+    while ($sql->fetch()) {
+        $items[$count] = array('id' => $iid, 'title' => $ititle, 'url' => $iurl, 'description' => $idescription);
+        $count++;
+    }
+
+    $sql->close();
+
+    loggit(1, "Returning feed item: [$id].");
+    return ($items[0]);
+}
+
+
+//Retrieve a list of all the feed items in the database
+function get_feed_item_guids_by_feed_id($fid = NULL, $max = 0)
+{
+    //Includes
+    include get_cfg_var("cartulary_conf") . '/includes/env.php';
+
+    //Connect to the database server
+    $dbh = new mysqli($dbhost, $dbuser, $dbpass, $dbname) or loggit(2, "MySql error: " . $dbh->error);
+
+    //Get all feed items up to max
+    $sqltxt = "SELECT guid FROM $table_nfitem WHERE feedid=?";
+
+    //Max given?
+    if ( $max > 0 && is_numeric($max) ) {
+        $sqltxt .= " LIMIT $max";
+    }
+
+    //Run the query
+    $sql = $dbh->prepare($sqltxt) or loggit(2, "MySql error: " . $dbh->error);
+    $sql->bind_param("s", $fid) or loggit(2, "MySql error: " . $dbh->error);
+    $sql->execute() or loggit(2, "MySql error: " . $dbh->error);
+    $sql->store_result() or loggit(2, "MySql error: " . $dbh->error);
+
+    //See if there were any feed items returned
+    if ($sql->num_rows() < 1) {
+        $sql->close()
+        or loggit(2, "MySql error: " . $dbh->error);
+        loggit(2, "There are no feed items stored for feed: [$fid].");
+        return (array());
+    }
+
+    $sql->bind_result($guid) or loggit(2, "MySql error: " . $dbh->error);
+
+    $items = array();
+    $count = 0;
+    while ($sql->fetch()) {
+        $items[] = $guid;
+        $count++;
+    }
+
+    $sql->close();
+
+    loggit(1, "Returning: [$count] feed items for feed: [$fid].");
+    return ($items);
+}
+
+
+//Retrieve a list of all the feed items in the database
 function get_all_feed_items($max = NULL, $collapsebyurl = TRUE)
 {
     //Includes
@@ -2113,7 +2605,7 @@ function get_updated_feeds($max = NULL)
     $dbh = new mysqli($dbhost, $dbuser, $dbpass, $dbname) or loggit(2, "MySql error: " . $dbh->error);
 
     //Look for the
-    $sqltxt = "SELECT id,title,url,createdon FROM $table_newsfeed WHERE updated=1";
+    $sqltxt = "SELECT id,title,url,createdon FROM $table_newsfeed WHERE updated=1 ORDER BY lastcheck ASC";
 
     if ( !empty($max) && is_numeric($max) ) {
         $sqltxt .= " LIMIT $max";
@@ -2172,9 +2664,14 @@ function add_feed_item($fid = NULL, $item = NULL, $format = NULL, $namespaces = 
 
     //Timestamp
     $timeadded = time();
+    $tstart = time();
 
     //Contains media?
     $media = 0;
+
+    //Get feed url
+    $fd = get_feed_info($fid);
+    $fdurl = $fd['url'];
 
     //Each item needs a unique id
     //$id = random_gen(128);
@@ -2216,13 +2713,23 @@ function add_feed_item($fid = NULL, $item = NULL, $format = NULL, $namespaces = 
         $enclosures = array();
         for ($lcount = 0; $lcount < $mcount; $lcount++) {
             //Alternate is the main link
-            if ($item->link[$lcount]['rel'] == "alternate") {
-                $linkurl = $item->link[$lcount]['href'];
+            if ($item->link[$lcount]['rel'] == "alternate" || !isset($item->link->attributes()->rel)) {
+                if(isset($item->link[$lcount]) && !isset($item->link[$lcount]['href'])) {
+                    $linkurl = (string)$item->link[$lcount][0];
+                    if(stripos($linkurl, 'http') !== 0) {
+                        $linkurl = "#";
+                    }
+                } else {
+                    $linkurl = $item->link[$lcount]['href'];
+                }
             }
+            //loggit(3, "ATOM LINK: $linkurl");
 
-            //Some feeds only use id for the link
-            if ( isset($item->id) && ( stripos($item->id, 'http:') !== FALSE || stripos($item->id, 'https:') !== FALSE) ) {
-                $linkurl = trim($item->id);
+            //Some feeds only use id for the link, so if no valid linkurl exists yet, try the id element
+            if ( stripos($linkurl, 'http:') === FALSE && stripos($linkurl, 'https:') === FALSE ) {
+                if ( isset($item->id) && ( stripos($item->id, 'http:') !== FALSE || stripos($item->id, 'https:') !== FALSE) ) {
+                    $linkurl = trim($item->id);
+                }
             }
 
             //Enclosures are links also
@@ -2252,7 +2759,7 @@ function add_feed_item($fid = NULL, $item = NULL, $format = NULL, $namespaces = 
                         $esize = check_head_size($esrc);
                     }
                     //If it's not duplicate, add it
-                    if (!in_array_r($esrc, $enclosures)) {
+                    if (!in_array_r($esrc, $enclosures) && !empty($esrc)) {
                         $enclosures[] = array('url' => $esrc,
                             'length' => 0 + $esize,
                             'type' => make_mime_type($esrc, $etype)
@@ -2281,11 +2788,17 @@ function add_feed_item($fid = NULL, $item = NULL, $format = NULL, $namespaces = 
         if (!empty($cleaned['media'])) {
             foreach ($cleaned['media'] as $mediatag) {
                 $esize = "";
-                if ($mediatag['type'] == 'image' || $mediatag['type'] == 'audio' || $mediatag['type'] == 'video') {
+                if ($mediatag['type'] == 'audio' || $mediatag['type'] == 'video') {
                     $esize = check_head_size($mediatag['src']);
+                } else {
+                    $esize = 0;
                 }
-                if ((empty($esize) || $esize > 2500) && !in_array_r($mediatag['src'], $enclosures)) {
-                    $enclosures[] = array('url' => $mediatag['src'], 'length' => 0 + $esize, 'type' => make_mime_type($mediatag['src'], $mediatag['type']));
+                if ((empty($esize) || $esize > 2500) && !in_array_r($mediatag['src'], $enclosures) && !empty($mediatag['src'])) {
+                    $enclosures[] = array('url' => $mediatag['src'],
+                                          'length' => 0 + $esize,
+                                          'type' => make_mime_type($mediatag['src'], $mediatag['type']),
+                                          'extracted' => TRUE
+                    );
                     $media = 1;
                 }
             }
@@ -2327,7 +2840,7 @@ function add_feed_item($fid = NULL, $item = NULL, $format = NULL, $namespaces = 
         $sql->bind_param("sssssddsssssd", $fid, $title, $linkurl, $description, $item->id, $pubdate, $timeadded, $enclosure, $sourceurl, $sourcetitle, $author, $origin, $media) or loggit(2, "MySql error: " . $dbh->error);
     } else {
         //-----RSS----------------------------------------------------------------------------------------------------------------------------------------------------
-        $linkurl = $item->link;
+        $linkurl = trim((string)$item->link[0]);
         $title = clean_feed_item_content((string)$item->title, 0, FALSE, FALSE);
         $description = $item->description;
 
@@ -2335,13 +2848,19 @@ function add_feed_item($fid = NULL, $item = NULL, $format = NULL, $namespaces = 
         $mcount = count($item->enclosure);
         $enclosures = array();
         for ($i = 0; $i < $mcount; $i++) {
-            if (!in_array_r((string)$item->enclosure[$i]->attributes()->url, $enclosures)) {
-                $enclosures[$i] = array('url' => (string)$item->enclosure[$i]->attributes()->url,
-                    'length' => 0 + (string)$item->enclosure[$i]->attributes()->length,
-                    'type' => make_mime_type((string)$item->enclosure[$i]->attributes()->url, (string)$item->enclosure[$i]->attributes()->type)
-                );
-                $media = 1;
+            if(!empty((string)$item->enclosure[$i]->attributes()->url)) {
+                if (!in_array_r((string)$item->enclosure[$i]->attributes()->url, $enclosures)) {
+                    $enclosures[$i] = array('url' => (string)$item->enclosure[$i]->attributes()->url,
+                        'length' => 0 + (string)$item->enclosure[$i]->attributes()->length,
+                        'type' => make_mime_type((string)$item->enclosure[$i]->attributes()->url, (string)$item->enclosure[$i]->attributes()->type)
+                    );
+                    $media = 1;
+                }
             }
+        }
+
+        if(stripos($fdurl, "dailymail") !== FALSE) {
+            loggit(3, "DAILYMAIL: link is [$linkurl]");
         }
 
         //Does this item have a media namespace?
@@ -2350,7 +2869,7 @@ function add_feed_item($fid = NULL, $item = NULL, $format = NULL, $namespaces = 
             $kcount = count($kids);
             $ecount = count($enclosures);
             for ($i = 0; $i < $kcount; $i++) {
-                if (isset($kids[$i]->attributes()->url)) {
+                if (isset($kids[$i]->attributes()->url) && !empty((string)$kids[$i]->attributes()->url)) {
                     $murl = (string)$kids[$i]->attributes()->url;
                     if (!in_array_r($murl, $enclosures)) {
                         $enclosures[$ecount] = array('url' => (string)$kids[$i]->attributes()->url, 'length' => 0, 'type' => make_mime_type((string)$kids[$i]->attributes()->url));
@@ -2364,7 +2883,7 @@ function add_feed_item($fid = NULL, $item = NULL, $format = NULL, $namespaces = 
             $kcount = count($kids);
             $ecount = count($enclosures);
             for ($i = 0; $i < $kcount; $i++) {
-                if (isset($kids[$i]->attributes()->url)) {
+                if (isset($kids[$i]->attributes()->url) && !empty((string)$kids[$i]->attributes()->url)) {
                     $murl = (string)$kids[$i]->attributes()->url;
                     if (!in_array_r($murl, $enclosures)) {
                         $enclosures[$ecount] = array('url' => (string)$kids[$i]->attributes()->url, 'length' => 0, 'type' => make_mime_type((string)$kids[$i]->attributes()->url));
@@ -2378,7 +2897,7 @@ function add_feed_item($fid = NULL, $item = NULL, $format = NULL, $namespaces = 
         //Does this item have a content namespace?
         if (isset($namespaces['content'])) {
             $content = $item->children($namespaces['content']);
-            if (isset($content->encoded)) {
+            if (isset($content->encoded) && stripos((string)trim($content->encoded), 'fb:article_style') === FALSE) {
                 $description = (string)trim($content->encoded);
                 loggit(1, "Content:encoded found: " . print_r($content, TRUE));
             }
@@ -2409,8 +2928,13 @@ function add_feed_item($fid = NULL, $item = NULL, $format = NULL, $namespaces = 
             $author = strip_tags((string)$item->author);
         }
 
-        //We need a guid, so if the item doesn't have a guid, then build a uniqe id by hashing the whole item
-        $uniq = get_unique_id_for_feed_item($item);
+        //We need a guid, so if the item doesn't have a guid, then build a unique id by hashing the whole item
+        if(isset($namespaces['rdf'])) {
+            $uniq = get_unique_id_for_rdf_feed_item($item, $namespaces);
+        } else {
+            $uniq = get_unique_id_for_feed_item($item);
+        }
+
 
         //De-relativize links
         $httploc = strpos($linkurl, 'http');
@@ -2422,15 +2946,26 @@ function add_feed_item($fid = NULL, $item = NULL, $format = NULL, $namespaces = 
         $cleaned = clean_feed_item_content($description, 0, TRUE, TRUE);
         $description = $cleaned['text'];
 
+        //TODO: Experimental!!
+        //Do we want to cartulize new feed item links?
+        //$article = cartulize($url);
+
         //Attach extracted media tags as enclosures with correct type
         if (is_array($cleaned['media']) && count($cleaned['media']) > 0) {
             foreach ($cleaned['media'] as $mediatag) {
                 $esize = "";
-                if ($mediatag['type'] == 'image' || $mediatag['type'] == 'audio' || $mediatag['type'] == 'video') {
+                if ($mediatag['type'] == 'audio' || $mediatag['type'] == 'video') {
                     $esize = check_head_size($mediatag['src']);
+                } else {
+                    $esize = 0;
                 }
-                if ((empty($esize) || $esize > 2500) && !in_array_r($mediatag['src'], $enclosures)) {
-                    $enclosures[] = array('url' => $mediatag['src'], 'length' => 0 + $esize, 'type' => make_mime_type($mediatag['src'], $mediatag['type']));
+                if ((empty($esize) || $esize > 2500) && !in_array_r($mediatag['src'], $enclosures) && !empty($mediatag['src'])) {
+                    $enclosures[] = array(
+                        'url' => $mediatag['src'],
+                        'length' => 0 + $esize,
+                        'type' => make_mime_type($mediatag['src'], $mediatag['type']),
+                        'extracted' => TRUE
+                    );
                     $media = 1;
                 }
             }
@@ -2446,7 +2981,7 @@ function add_feed_item($fid = NULL, $item = NULL, $format = NULL, $namespaces = 
 
         //Does this item have an origin?
         $origin = "";
-        if (isset($namespaces['feedburder'])) {
+        if (isset($namespaces['feedburner'])) {
             $feedburner = $item->children($namespaces['feedburner']);
             if (isset($feedburner->origLink)) {
                 $origin = (string)trim($feedburner->origLink);
@@ -2479,10 +3014,16 @@ function add_feed_item($fid = NULL, $item = NULL, $format = NULL, $namespaces = 
     }
     $sql->execute() or loggit(3, $dbh->error);
 
-
     //Get the last item id that was generated
     $id = $sql->insert_id;
     $sql->close();
+
+    //Put enclosures in the database
+    if(!empty($enclosures)) {
+        foreach($enclosures as $e) {
+            add_feed_item_enclosure($id, $e);
+        }
+    }
 
     //Map the searchable terms in this item if new search is enabled
     if( $cg_search_v2_enable ) {
@@ -2508,8 +3049,17 @@ function add_feed_item($fid = NULL, $item = NULL, $format = NULL, $namespaces = 
         }
     }
 
+    $ttime = time() - $tstart;
+    $identifier = $linkurl;
+    if( empty($identifier) ) {
+        $identifier = $uniq;
+    }
+    if( $ttime > 1 ) {
+        loggit(3, "   TIMER: add_feed_item() took: [$ttime] seconds for item: [$identifier]");
+    }
+
     //Log and return
-    loggit(3, "New feed item for feed: [$fid].");
+    loggit(1, "New feed item for feed: [$fid].");
     return ($id);
 }
 
@@ -2543,8 +3093,7 @@ function feed_item_exists($fid = NULL, $guid = NULL)
     //See if any rows came back
     $rowcount = $sql->num_rows();
     if ($rowcount < 1) {
-        $sql->close()
-        or loggit(2, "MySql error: " . $dbh->error);
+        $sql->close() or loggit(2, "MySql error: " . $dbh->error);
         //loggit(3,"The feed item with guid: [$guid] does not exist for feed: [$fid]. Row count: [$rowcount].");
         return (FALSE);
     }
@@ -2596,7 +3145,7 @@ function map_feed_item($iid = NULL, $content = NULL)
 
             if( $wordid < 0 ) {
                 //Insert each word into the map table
-                $stmt = "INSERT INTO $table_nfitem_map (word) VALUES (?) ON DUPLICATE KEY UPDATE id=LAST_INSERT_ID(id), dummy=NOT dummy";
+                $stmt = "INSERT INTO $table_nfitem_map (word,added) VALUES (?,NOW()) ON DUPLICATE KEY UPDATE id=LAST_INSERT_ID(id), dummy=NOT dummy";
                 $sql = $dbh->prepare($stmt) or loggit(2, "MySql error: " . $dbh->error);
                 $sql->bind_param("s", $word) or loggit(2, "MySql error: " . $dbh->error);
                 $sql->execute() or loggit(2, "MySql error: " . $dbh->error);
@@ -2608,7 +3157,7 @@ function map_feed_item($iid = NULL, $content = NULL)
 
             if( is_numeric($lid) && $lid > 0 ) {
                 //Now catalog the mapping
-                $stmt = "INSERT INTO $table_nfitem_map_catalog (wordid,nfitemid) VALUES (?,?) ON DUPLICATE KEY UPDATE wordid=wordid";
+                $stmt = "INSERT INTO $table_nfitem_map_catalog (wordid,nfitemid,added) VALUES (?,?, NOW()) ON DUPLICATE KEY UPDATE wordid=wordid,added=NOW()";
                 $sql = $dbh->prepare($stmt) or loggit(2, "MySql error: " . $dbh->error);
                 $sql->bind_param("dd", $lid, $iid) or loggit(2, "MySql error: " . $dbh->error);
                 $sql->execute() or loggit(2, "MySql error: " . $dbh->error);
@@ -3137,6 +3686,8 @@ function get_unique_id_for_feed_item($item = NULL)
         return (FALSE);
     }
 
+    $tstart = time();
+
     //Includes
     include get_cfg_var("cartulary_conf") . '/includes/env.php';
 
@@ -3150,13 +3701,50 @@ function get_unique_id_for_feed_item($item = NULL)
     $hashed = sha1($item->asXML());
 
     //Return
-    //loggit(3, "Returning hash: [$hashed] as unique id for feed item: [".print_r($item, TRUE)."]");
+    loggit(3, "Took: [".(time() - $tstart)."] seconds to generate hash: [$hashed] as unique id for feed item.");
+    return ($hashed);
+}
+
+
+//Hash a feed item to construct a unique id for this item
+function get_unique_id_for_rdf_feed_item($item = NULL, $namespaces = array())
+{
+    //Check parameters
+    if (empty($item)) {
+        loggit(2, "The feed item is blank or corrupt: [" . print_r($item, TRUE) . "]");
+        return (FALSE);
+    }
+
+    $tstart = time();
+
+    //Includes
+    include get_cfg_var("cartulary_conf") . '/includes/env.php';
+
+    //loggit(3, "DEBUG: RDF namespaces: ".print_r($namespaces, TRUE));
+
+    //Get rdf about string
+    if( isset($namespaces['rdf']) && !empty($item->attributes($namespaces['rdf'])->about) ) {
+        //loggit(3, "RDF item->about attribute: ".$item->attributes($namespaces['rdf'])->about);
+        return ($item->attributes($namespaces['rdf'])->about);
+    }
+
+    //If a guid exists then get that instead
+    if (!empty($item->guid)) {
+        //loggit(3, "Returning guid: [".$item->guid."] as unique id for feed item."]");
+        return ($item->guid);
+    }
+
+    //Hash it
+    $hashed = sha1($item->asXML());
+
+    //Return
+    loggit(3, "Took: [".(time() - $tstart)."] seconds to generate hash: [$hashed] as unique id for RDF feed item.");
     return ($hashed);
 }
 
 
 //Search for river items that match the query for this user
-function search_feed_items($uid = NULL, $query = NULL, $max = NULL)
+function search_feed_items($uid = NULL, $query = NULL, $max = NULL, $withopml = FALSE)
 {
     //Check parameters
     if ($uid == NULL) {
@@ -3251,10 +3839,23 @@ function search_feed_items($uid = NULL, $query = NULL, $max = NULL)
             $title = $description;
         }
         $nfitems[$count] = array('id' => $id, 'title' => $title, 'url' => $url);
+        if($withopml) {
+            $nfitems[$count]['description'] = $description;
+            $nfitems[$count]['timeadded'] = $timeadded;
+        }
         $count++;
     }
 
     $sql->close();
+
+    if($withopml) {
+        $s3url = build_opml_nfitem_feed($uid, $max, FALSE, $nfitems, FALSE, "search/riversearch", TRUE, "River search results: [".$query['flat']."]");
+        loggit(3, "OPMLURL: $s3url");
+        if(is_string($s3url)) {
+            $nfitems['opmlurl'] = $s3url;
+            loggit(3, "OPMLURL: ".$nfitems['opmlurl']);
+        }
+    }
 
     loggit(1, "Returning: [$count] newsfeed items for user: [$uid]");
     return ($nfitems);
@@ -3484,7 +4085,10 @@ function build_server_river_json($max = NULL, $force = FALSE, $mobile = FALSE)
 
         //Put the json river file
         $filename = $default_river_json_file_name;
-        $s3res = putInS3($djsonriver, $filename, $s3info['riverbucket'] . $subpath, $s3info['key'], $s3info['secret'], "application/javascript");
+        $s3res = putInS3(gzencode($djsonriver), $filename, $s3info['riverbucket'] . $subpath, $s3info['key'], $s3info['secret'], array(
+            'Content-Type'      => 'application/javascript',
+            'Content-Encoding'  => 'gzip'
+        ));
         if (!$s3res) {
             loggit(2, "Could not create S3 file: [$filename].");
             //loggit(3, "Could not create S3 file: [$filename].");
@@ -3527,7 +4131,10 @@ function build_server_river_json($max = NULL, $force = FALSE, $mobile = FALSE)
 
             //Put the html template
             $filename = $s3info['riverfile'];
-            $s3res = putInS3($rftemplate, $filename, $s3info['riverbucket'] . $subpath, $s3info['key'], $s3info['secret'], "text/html");
+            $s3res = putInS3(gzencode($rftemplate), $filename, $s3info['riverbucket'] . $subpath, $s3info['key'], $s3info['secret'], array(
+                'Content-Type'      => 'text/html',
+                'Content-Encoding'  => 'gzip'
+            ));
             if (!$s3res) {
                 loggit(2, "Could not create S3 file: [$filename] for user: [$username].");
                 //loggit(3, "Could not create S3 file: [$filename] for user: [$username].");
@@ -3590,8 +4197,8 @@ function build_public_river($uid = NULL, $max = NULL, $force = FALSE, $mobile = 
     //Prefs
     $prefs = get_user_prefs($uid);
 
-    $start = time() - (6 * 3600);
-    $dmax = 100;
+    $start = time() - (48 * 3600);
+    $dmax = 75;
     $mmax = 50;
 
     //The river array
@@ -3797,10 +4404,7 @@ function build_public_river($uid = NULL, $max = NULL, $force = FALSE, $mobile = 
     $mjsonriver = "onGetRiverStream(" . json_encode($moutput) . ")";
 
     //Let's return the river asked for
-    $jsonriver = $djsonriver;
-    if ($mobile == TRUE) {
-        $jsonriver = $mjsonriver;
-    }
+    $jsonriver = $mjsonriver;
 
     //If we can get some sane S3 credentials then let's go
     if ((s3_is_enabled($uid) || sys_s3_is_enabled()) && $prefs['publicriver'] == 1) {
@@ -3812,7 +4416,7 @@ function build_public_river($uid = NULL, $max = NULL, $force = FALSE, $mobile = 
 
         //Put the json river file
         $filename = $default_public_river_json_file_name;
-        $s3res = putInS3(gzencode($djsonriver), $filename, $s3info['bucket'] . $subpath, $s3info['key'], $s3info['secret'], array("Content-Type" => "application/javascript", "Content-Encoding" => "gzip"));
+        $s3res = putInS3(gzencode($jsonriver), $filename, $s3info['bucket'] . $subpath, $s3info['key'], $s3info['secret'], array("Content-Type" => "application/javascript", "Content-Encoding" => "gzip"));
         if (!$s3res) {
             loggit(2, "Could not create S3 file: [$filename].");
             //loggit(3, "Could not create S3 file: [$filename].");
@@ -3861,7 +4465,7 @@ function build_public_river($uid = NULL, $max = NULL, $force = FALSE, $mobile = 
 
             //Put the html index
             $filename = $prefs['pubriverfile'];
-            $s3res = putInS3($rftemplate, $filename, $s3info['bucket'] . $subpath, $s3info['key'], $s3info['secret'], "text/html");
+            $s3res = putInS3(gzencode($rftemplate), $filename, $s3info['bucket'] . $subpath, $s3info['key'], $s3info['secret'], array("Content-Type" => "text/html", "Content-Encoding" => "gzip"));
             if (!$s3res) {
                 loggit(2, "Could not create S3 file: [$filename] for user: [$username].");
                 //loggit(3, "Could not create S3 file: [$filename] for user: [$username].");
@@ -3901,8 +4505,8 @@ function build_public_river($uid = NULL, $max = NULL, $force = FALSE, $mobile = 
         }
     }
 
-    loggit(1, "Returning: [$drcount] items in public river.");
-    loggit(1, "Returning: [$mrcount] items in public river.");
+    loggit(3, "Returning: [$drcount] items in public river.");
+    loggit(3, "Returning: [$mrcount] items in public river.");
     return ($jsonriver);
 }
 
@@ -4105,6 +4709,9 @@ function build_river_json2($uid = NULL, $max = NULL, $force = FALSE, $mobile = F
     $lastfeedid = "";
     $pubdate = time();
     while ($sql->fetch()) {
+        //If this feed is hidden skip
+        if( $fhidden == 1 ) continue;
+
         $feed = get_feed_info($feedid);
 
         //Save the time stamp of the first item to use as a pubdate
@@ -4179,8 +4786,8 @@ function build_river_json2($uid = NULL, $max = NULL, $force = FALSE, $mobile = F
             if ($ffulltext == 1) {
                 $itembody = $description;
             } else
-                if (strlen($description) > 300) {
-                    $itembody = truncate_text($description, 300) . "...";
+                if (strlen($description) > $cg_default_max_river_item_body_length) {
+                    $itembody = truncate_text($description, $cg_default_max_river_item_body_length) . "...";
                 } else {
                     $itembody = $description;
                 }
@@ -4370,7 +4977,7 @@ function build_river_json2($uid = NULL, $max = NULL, $force = FALSE, $mobile = F
             $filename = $default_river_json_file_name;
             $s3res = putInS3(gzencode($djsonriver), $filename, $s3info['bucket'] . $subpath, $s3info['key'], $s3info['secret'], array("Content-Type" => "application/javascript", "Content-Encoding" => "gzip"));
             if (!$s3res) {
-                loggit(2, "Could not create S3 file: [$filename] for user: [$username].");
+                loggit(2, "Could not create S3 file: [$filename] for user: [$uid].");
                 //loggit(3, "Could not create S3 file: [$filename] for user: [$username].");
             } else {
                 $s3url = get_s3_url($uid, $subpath, $filename);
@@ -5175,7 +5782,7 @@ function collapse_river($river)
 
 
 //Retrieve the feed items that have media in them
-function get_feed_items_with_enclosures($uid = NULL, $tstart = NULL, $max = NULL, $start = NULL)
+function get_feed_items_with_enclosures($uid = NULL, $tstart = NULL, $max = NULL, $start = NULL, $typefilter = NULL)
 {
     //Check parameters
     if (empty($uid)) {
@@ -5248,20 +5855,25 @@ function get_feed_items_with_enclosures($uid = NULL, $tstart = NULL, $max = NULL
     $items = array();
     $count = 0;
     while ($sql->fetch()) {
-        $items[$count] = array(
-            'id' => $aid,
-            'url' => $aurl,
-            'title' => $atitle,
-            'description' => $adescription,
-            'timestamp' => $atimestamp,
-            'timeadded' => $atimeadded,
-            'enclosure' => unserialize($aenclosure),
-            'sourceurl' => $asourceurl,
-            'sourcetitle' => $asourcetitle,
-            'origin' => $aorigin,
-            'author' => $aauthor
-        );
-        $count++;
+        $enc = unserialize($aenclosure);
+        foreach( $enc as $enclosure ) {
+            if($typefilter == NULL || stripos($enclosure['url'], $typefilter) !== FALSE) {
+                $items[$count] = array(
+                    'id' => $aid,
+                    'url' => $aurl,
+                    'title' => $atitle,
+                    'description' => $adescription,
+                    'timestamp' => $atimestamp,
+                    'timeadded' => $atimeadded,
+                    'enclosure' => $enclosure,
+                    'sourceurl' => $asourceurl,
+                    'sourcetitle' => $asourcetitle,
+                    'origin' => $aorigin,
+                    'author' => $aauthor
+                );
+                $count++;
+            }
+        }
     }
 
     $sql->close();
@@ -5273,8 +5885,131 @@ function get_feed_items_with_enclosures($uid = NULL, $tstart = NULL, $max = NULL
 }
 
 
-//Retrieve the feed items that are sticky
-function get_sticky_feed_items($uid = NULL)
+//Retrieve the feed items that have media in them
+function get_feed_items_with_enclosures2($uid = NULL, $tstart = NULL, $max = NULL, $start = NULL, $type = NULL, $noduplicates = FALSE)
+{
+    //Check parameters
+    if (empty($uid)) {
+        loggit(2, "The user id is corrupt or blank: [$uid]");
+        return (FALSE);
+    }
+
+    //Includes
+    include get_cfg_var("cartulary_conf") . '/includes/env.php';
+
+    //Connect to the database server
+    $dbh = new mysqli($dbhost, $dbuser, $dbpass, $dbname) or loggit(2, "MySql error: " . $dbh->error);
+
+    //Set up max limit
+    if (empty($max)) {
+        $max = $default_max_list;
+    }
+
+    //Set up start time
+    if (empty($tstart)) {
+        $tstart = time() - 86400;
+    }
+
+    //Run the query
+    $sqltxt = "SELECT enc.id,
+                      enc.iid,
+                      enc.url,
+                      enc.mimetype,
+                      enc.length,
+                      enc.time,
+                      enc.type,
+                      enc.marker,
+                      nfi.title,
+                      nfi.sourceurl,
+                      nfi.sourcetitle,
+                      nfi.origin,
+                      nfi.author
+             FROM $table_nfenclosures AS enc
+             LEFT JOIN $table_nfitem AS nfi ON nfi.id = enc.iid
+             INNER JOIN $table_nfcatalog AS nfc ON nfi.feedid = nfc.feedid AND nfc.userid = ?
+    ";
+
+    //Was a type requested
+    if (!empty($type)) {
+        $sqltxt .= "WHERE enc.type = ?
+        ";
+    }
+
+    $sqltxt .= "ORDER BY enc.time DESC LIMIT ?,?";
+
+
+
+    loggit(3, "DEBUG_SQL:[$sqltxt]");
+    $sql = $dbh->prepare($sqltxt) or loggit(2, "MySql error: " . $dbh->error);
+    //Was a type requested
+    if (!empty($type)) {
+        $sql->bind_param("sddd", $uid, $type, $start, $max) or loggit(2, $sql->error);
+    } else {
+        $sql->bind_param("sdd", $uid, $start, $max) or loggit(2, $sql->error);
+    }
+    $sql->execute() or loggit(2, "MySql error: " . $dbh->error);
+    $sql->store_result() or loggit(2, "MySql error: " . $dbh->error);
+
+    //See if there were any items returned
+    if ($sql->num_rows() < 1) {
+        $sql->close()
+        or loggit(2, "MySql error: " . $dbh->error);
+        loggit(1, "No feed items returned for: [$fid].");
+        return (array());
+    }
+
+    $sql->bind_result(
+        $aid,
+        $aiid,
+        $aurl,
+        $amimetype,
+        $alength,
+        $atime,
+        $atype,
+        $amarker,
+        $atitle,
+        $asourceurl,
+        $asourcetitle,
+        $aorigin,
+        $aauthor
+    ) or loggit(2, "MySql error: " . $dbh->error);
+
+    $urls = array();
+    $items = array();
+    $count = 0;
+    while ($sql->fetch()) {
+        if($noduplicates && in_array($aurl, $urls)) continue;
+
+        $items[$count] = array(
+            'id' => $aiid,
+            'url' => $aurl,
+            'mimetype' => $amimetype,
+            'length' => $alength,
+            'title' => $atitle,
+            'type' => $atype,
+            'timestamp' => $atime,
+            'timeadded' => $atime,
+            'sourceurl' => $asourceurl,
+            'sourcetitle' => $asourcetitle,
+            'origin' => $aorigin,
+            'author' => $aauthor
+        );
+        $count++;
+
+        if($noduplicates) $urls[] = $aurl;
+    }
+
+    $sql->close();
+
+    //loggit(3, print_r($items, TRUE));
+
+    loggit(1, "Returning: [$count] items.");
+    return ($items);
+}
+
+
+//Retrieve the feed items that are sticky for a users river
+function get_sticky_feed_items($uid = NULL, $max = 100)
 {
     //Check parameters
     if (empty($uid)) {
@@ -5316,14 +6051,14 @@ function get_sticky_feed_items($uid = NULL)
 					'nfcatalog.hidden',
 					'nfcatalog.fulltext'
              FROM (SELECT itemid FROM nfitemprops WHERE userid = ? AND sticky = 1) AS tsub
-             INNER JOIN nfitems ON nfitems.id = tsub.itemid
-			 INNER JOIN newsfeeds ON nfitems.feedid = newsfeeds.id
-			 INNER JOIN nfcatalog ON nfitems.feedid = nfcatalog.feedid AND nfcatalog.userid = ?
-             ORDER BY timeadded DESC";
+             LEFT JOIN nfitems ON nfitems.id = tsub.itemid
+			 LEFT JOIN newsfeeds ON nfitems.feedid = newsfeeds.id
+			 LEFT JOIN nfcatalog ON nfitems.feedid = nfcatalog.feedid AND nfcatalog.userid = ?
+             ORDER BY timeadded ASC LIMIT ?";
 
     //loggit(3, "[$sqltxt]");
     $sql = $dbh->prepare($sqltxt) or loggit(2, "MySql error: " . $dbh->error);
-    $sql->bind_param("ss", $uid, $uid) or loggit(2, $sql->error);
+    $sql->bind_param("ssd", $uid, $uid, $max) or loggit(2, $sql->error);
     $sql->execute() or loggit(2, "MySql error: " . $dbh->error);
     $sql->store_result() or loggit(2, "MySql error: " . $dbh->error);
 
@@ -5368,8 +6103,8 @@ function get_sticky_feed_items($uid = NULL)
             if ($lffulltext == 1) {
                 $itembody = $ldescription;
             } else
-                if (strlen($ldescription) > 300) {
-                    $itembody = truncate_text($ldescription, 300) . "...";
+                if (strlen($ldescription) > $cg_default_max_river_item_body_length) {
+                    $itembody = truncate_text($ldescription, $cg_default_max_river_item_body_length) . "...";
                 } else {
                     $itembody = $ldescription;
                 }
@@ -5439,4 +6174,702 @@ function get_sticky_feed_items($uid = NULL)
 
     loggit(1, "Returning: [$count] items.");
     return ($items);
+}
+
+
+//Retrieve the feed items for a users river
+function get_river_feed_items($uid = NULL, $max = 100)
+{
+    //Check parameters
+    if (empty($uid)) {
+        loggit(2, "The user id is corrupt or blank: [$uid]");
+        return (FALSE);
+    }
+
+    //Includes
+    include get_cfg_var("cartulary_conf") . '/includes/env.php';
+
+    //Get prefs
+    $prefs = get_user_prefs($uid);
+
+    $timeadded = time() - 7200;
+
+    //Connect to the database server
+    $dbh = new mysqli($dbhost, $dbuser, $dbpass, $dbname) or loggit(2, "MySql error: " . $dbh->error);
+
+    //Run the query
+    $sqltxt = "SELECT $table_nfitem.id,
+                    $table_nfitem.title,
+                    $table_nfitem.url,
+                    $table_nfitem.timestamp,
+                    $table_nfitem.feedid,
+                    $table_nfitem.timeadded,
+                    $table_nfitem.enclosure,
+                    $table_nfitem.description,
+                    $table_nfitem.guid,
+                    $table_nfitem.origin,
+                    $table_nfitem.sourceurl,
+                    $table_nfitem.sourcetitle,
+                    $table_nfitem.author,
+                    $table_nfitemprop.sticky,
+                    $table_nfcatalog.sticky,
+                    $table_nfitemprop.hidden,
+                    $table_nfcatalog.hidden,
+                    $table_nfitemprop.`fulltext`,
+                    $table_nfcatalog.`fulltext`,
+                    $table_newsfeed.url,
+                    $table_newsfeed.title,
+                    $table_newsfeed.link,
+                    $table_newsfeed.avatarurl,
+                    $table_newsfeed.pubdate
+             FROM $table_nfitem
+             LEFT JOIN $table_newsfeed ON $table_newsfeed.id = $table_nfitem.feedid
+             LEFT OUTER JOIN $table_nfitemprop ON $table_nfitemprop.itemid = $table_nfitem.id AND $table_nfitemprop.userid=?
+             INNER JOIN $table_nfcatalog ON $table_nfcatalog.feedid = $table_nfitem.feedid
+             WHERE $table_nfcatalog.userid=?
+             AND $table_nfitem.timeadded > ?
+             AND $table_nfitem.`old` = 0";
+    $sqltxt .= " ORDER BY $table_nfitem.timeadded ASC LIMIT ?";
+
+    //loggit(3, "[$sqltxt]");
+    $sql = $dbh->prepare($sqltxt) or loggit(2, "MySql error: " . $dbh->error);
+    $sql->bind_param("ssdd", $uid, $uid, $timeadded, $max) or loggit(2, $sql->error);
+    $sql->execute() or loggit(2, "MySql error: " . $dbh->error);
+    $sql->store_result() or loggit(2, "MySql error: " . $dbh->error);
+
+    //See if there were any items returned
+    if ($sql->num_rows() < 1) {
+        $sql->close()
+        or loggit(2, "MySql error: " . $dbh->error);
+        loggit(1, "No feed items returned for: [$uid].");
+        return (array());
+    }
+
+    $sql->bind_result($litemid, $ltitle, $lurl, $ltimestamp, $lfeedid, $ltimeadded, $lenclosure, $ldescription, $lguid, $lorigin, $lsourceurl,
+        $lsourcetitle, $lauthor, $lsticky, $lfsticky, $lhidden, $lfhidden, $lfulltext, $lffulltext, $lfeedurl, $lfeedtitle, $lfeedlink, $lavatarurl,
+        $lfeedpubdate) or loggit(2, "MySql error: " . $dbh->error);
+
+    $items = array();
+    $count = 0;
+    while ($sql->fetch()) {
+        //Construct item body
+        if ($prefs['fulltextriver'] == 0) {
+            if ($lffulltext == 1) {
+                $itembody = $ldescription;
+            } else
+                if (strlen($ldescription) > 300) {
+                    $itembody = truncate_text($ldescription, 300) . "...";
+                } else {
+                    $itembody = $ldescription;
+                }
+        } else {
+            $itembody = $ldescription;
+        }
+
+        //Check if we have a feed defined timestamp greater than 1/1/1990 and
+        //use it if so.  This is a quick and dirty sanity check.  Otherwise use
+        //timeadded since we know that is always sane
+        $litemtime = 0;
+        if( $ltimestamp > 631152000 ) {
+            $litemtime = $ltimestamp;
+        } else {
+            $litemtime = $ltimeadded;
+        }
+
+        //Construct the item array
+        $items[$count] = array('author' => $lauthor,
+            'avatarUrl' => $lavatarurl,
+            'body' => $itembody,
+            'guid' => $lguid,
+            'id' => $litemid,
+            'index' => $count,
+            'link' => $lurl,
+            'origin' => $lorigin,
+            'enclosure' => unserialize($lenclosure),
+            'permaLink' => $lurl,
+            'pubDate' => date("D, d M Y H:i:s O", $litemtime),
+            'sourcetitle' => $lsourcetitle,
+            'sourceurl' => $lsourceurl,
+            'sticky' => 1,
+            'hidden' => 0,
+            'fullText' => $lfulltext,
+            'title' => $ltitle,
+            'feed' => array(
+                'feedDescription' => '',
+                'feedFullText' => $lffulltext,
+                'feedHidden' => $lfhidden,
+                'feedId' => $lfeedid,
+                'feedSticky' => $lfsticky,
+                'feedTitle' => $lfeedtitle,
+                'feedUrl' => $lfeedurl,
+                'websiteUrl' => $lfeedlink,
+                'whenLastUpdate' => $lfeedpubdate
+            )
+        );
+
+        //Check if this feed is linked to an outline this user subscribes to
+        $oid = get_feed_outline_by_user($lfeedid, $uid);
+        if ($oid != FALSE) {
+            $ou = get_outline_info($oid);
+            $items[$count]['feed']['linkedOutlineId'] = $oid;
+            if (!empty($ou['type'])) {
+                $items[$count]['feed']['linkedOutlineType'] = $ou['type'];
+            }
+            if (!empty($ou['title'])) {
+                $items[$count]['feed']['linkedOutlineTitle'] = $ou['title'];
+            }
+            if (!empty($ou['url'])) {
+                $items[$count]['feed']['linkedOutlineUrl'] = $ou['url'];
+            }
+            if (!empty($ou['ownername'])) {
+                $items[$count]['feed']['ownerName'] = $ou['ownername'];
+            }
+            if (!empty($ou['avatarurl'])) {
+                $items[$count]['feed']['avatarUrl'] = $ou['avatarurl'];
+            }
+        }
+
+        $count++;
+    }
+
+    $sql->close();
+
+    //loggit(3, print_r($items, TRUE));
+
+    loggit(1, "Returning: [$count] items.");
+    return ($items);
+}
+
+
+//Add an enclosure for a feed item
+function add_feed_item_enclosure($iid = NULL, $enclosure = array()) {
+    //Check parameters
+    if (empty($iid)) {
+        loggit(2, "The item id is blank or corrupt: [$iid]");
+        return (FALSE);
+    }
+    if(empty($enclosure)) {
+        loggit(2, "Enclosure array is blank or corrupt.");
+        return (FALSE);
+    }
+
+    //Set an integer for the given type
+    $t = get_mimetype_parent($enclosure['type']);
+    $enclosure['t'] = $t;
+    switch ($t) {
+        case 'image':
+            $type = 1;
+            break;
+        case 'audio':
+            $type = 2;
+            break;
+        case 'video':
+            $type = 3;
+            break;
+        default:
+            $type = 0;
+            break;
+    }
+
+    //See if this enclosure was an extraction from scraping the html or if it was a
+    //native enclosure
+    $source = 0;
+    if(isset($enclosure['source']) && $enclosure['source']) {
+        loggit(3, "DEBUG: Enclosure: [".$enclosure['url']."] was found by scraping.");
+        $source = 1;
+    }
+
+    //Includes
+    include get_cfg_var("cartulary_conf") . '/includes/env.php';
+
+    //Connect to the database server
+    $dbh = new mysqli($dbhost, $dbuser, $dbpass, $dbname) or loggit(2, "MySql error: " . $dbh->error);
+
+    $stmt = "INSERT INTO $table_nfenclosures
+                        (iid,
+                         url,
+                         mimetype,
+                         length,
+                         time,
+                         type,
+                         source)
+             VALUES     (?,?,?,?,NOW(),?,?)";
+    $sql = $dbh->prepare($stmt) or loggit(2, "MySql error: " . $dbh->error);
+    $sql->bind_param("dssddd", $iid, $enclosure['url'], $enclosure['type'], $enclosure['length'], $type, $source) or loggit(2, "MySql error: " . $dbh->error);
+    $sql->execute() or loggit(3, $dbh->error);
+    $sql->close();
+
+    loggit(1, "NEW ENCLOSURE: ".print_r($enclosure, TRUE));
+    return(TRUE);
+}
+
+
+//Re-calculate the counts for the v2 search table
+function calculate_map_word_counts() {
+    //Includes
+    include get_cfg_var("cartulary_conf") . '/includes/env.php';
+
+    //Connect to the database server
+    $dbh = new mysqli($dbhost, $dbuser, $dbpass, $dbname) or loggit(2, "MySql error: " . $dbh->error);
+
+    //First kill the existing records
+    $stmt = "TRUNCATE TABLE $table_nfitem_map_count";
+    $sql = $dbh->prepare($stmt) or loggit(2, "MySql error: " . $dbh->error);
+    $sql->execute() or loggit(2, "MySql error: " . $dbh->error);
+
+    //Do the word count insert
+    $stmt = "INSERT INTO $table_nfitem_map_count
+                SELECT wordid,count(nfitemid) as totals
+                FROM $table_nfitem_map_catalog AS catalog
+                GROUP BY wordid
+                ORDER BY totals DESC";
+    $sql = $dbh->prepare($stmt) or loggit(2, "MySql error: " . $dbh->error);
+    $sql->execute() or loggit(2, "MySql error: " . $dbh->error);
+
+    //Close the connection
+    $sql->close();
+
+    //Log and leave
+    loggit(3, "Re-built search map word counts.");
+    return(TRUE);
+}
+
+
+//Re-calculate the counts for the v2 search table for the last 23 hours
+function calculate_map_word_today_counts() {
+    //Includes
+    include get_cfg_var("cartulary_conf") . '/includes/env.php';
+
+    //Connect to the database server
+    $dbh = new mysqli($dbhost, $dbuser, $dbpass, $dbname) or loggit(2, "MySql error: " . $dbh->error);
+
+    //First kill the existing records
+    $stmt = "TRUNCATE TABLE $table_nfitem_map_count_today";
+    $sql = $dbh->prepare($stmt) or loggit(2, "MySql error: " . $dbh->error);
+    $sql->execute() or loggit(2, "MySql error: " . $dbh->error);
+
+    //Do the word count insert
+    $stmt = "INSERT INTO nfitem_map_count_today
+                SELECT wordid,count(nfitemid) as totals
+                FROM nfitem_map_catalog AS catalog
+                WHERE catalog.added >= (NOW() - INTERVAL 23 HOUR)
+                GROUP BY wordid
+                ORDER BY totals DESC";
+    $sql = $dbh->prepare($stmt) or loggit(2, "MySql error: " . $dbh->error);
+    $sql->execute() or loggit(2, "MySql error: " . $dbh->error);
+
+    //Close the connection
+    $sql->close();
+
+    //Log and leave
+    loggit(3, "Re-built search map word counts.");
+    return(TRUE);
+}
+
+
+//Get the counts for the v2 search table for the last 23 hours
+function get_map_word_today_counts($max = 100) {
+    //Includes
+    include get_cfg_var("cartulary_conf") . '/includes/env.php';
+
+    //Connect to the database server
+    $dbh = new mysqli($dbhost, $dbuser, $dbpass, $dbname) or loggit(2, "MySql error: " . $dbh->error);
+
+    //First kill the existing records
+    $stmt = "TRUNCATE TABLE $table_nfitem_map_count_today";
+    $sql = $dbh->prepare($stmt) or loggit(2, "MySql error: " . $dbh->error);
+    $sql->execute() or loggit(2, "MySql error: " . $dbh->error);
+
+    //Do the word count insert
+    $stmt = "SELECT nfm.word
+              FROM nfitem_map_count_today AS nfc
+              INNER JOIN nfitem_map AS nfm ON nfm.id = nfc.wordid
+              ORDER BY nfc.totals DESC";
+    $sql = $dbh->prepare($stmt) or loggit(2, "MySql error: " . $dbh->error);
+    $sql->execute() or loggit(2, "MySql error: " . $dbh->error);
+    $sql->store_result() or loggit(2, "MySql error: " . $dbh->error);
+
+    //See if there were any items returned
+    if ($sql->num_rows() < 1) {
+        $sql->close()
+        or loggit(2, "MySql error: " . $dbh->error);
+        loggit(1, "No words returned for the last 23 hours.");
+        return (array());
+    }
+
+    $sql->bind_result(
+        $fword
+    ) or loggit(2, "MySql error: " . $dbh->error);
+
+    $words = array();
+    $count = 0;
+    while ($sql->fetch()) {
+        //Construct the word array
+        $words[$count] = $fword;
+        $count++;
+    }
+
+    //Close the connection
+    $sql->close();
+
+    //Log and leave
+    loggit(3, "Returning: [$count] words in the last 23 hours.");
+    return(TRUE);
+}
+
+
+//Determine if a headline is click-bait and assign a score
+function calculate_click_bait_score($headline = "") {
+    //Check parameters
+    if (empty($headline)) {
+        loggit(2, "The headline to test is blank or corrupt: [$headline]");
+        return (FALSE);
+    }
+
+    $cbscore = 0;
+
+    //Check linguistics
+    if (preg_match("/\bthis\b/i", $headline)) {
+        $cbscore += 5;
+    }
+    if (preg_match("/\bthese\b/i", $headline)) {
+        $cbscore += 5;
+    }
+    if (preg_match("/\byou\b/i", $headline)) {
+        $cbscore += 5;
+    }
+    if (preg_match("/\byour\b/i", $headline)) {
+        $cbscore += 5;
+    }
+    if (preg_match("/([^-]\b[1-9][0-9]*\b)/i", $headline)) {
+        $cbscore += 5;
+    }
+
+    //Log and leave
+    loggit(3, "Click-bait score for [$headline] is: [$cbscore].");
+    return($cbscore);
+}
+
+
+//Create an m3u file based on all of the audio enclosures in this user's river
+function create_m3u_from_river_enclosures($uid = NULL, $max = 50) {
+
+    //Check parameters
+    if (empty($uid)) {
+        loggit(2, "The user id given is corrupt or blank: [$uid]");
+        return (FALSE);
+    }
+
+    //The m3u file content
+    $m3utxt = "#EXTM3U\n\n";
+
+    //Get all of the audio enclosures
+    $encitems = get_feed_items_with_enclosures2($uid, NULL, $max, NULL, 2, TRUE);
+
+    //Build out the m3u items
+    foreach($encitems as $encitem) {
+
+        //The header for each line
+        $m3utxt .= "#EXTINF:";
+
+        //Next is the length.  If it's less than 3 bytes (randomly chosen) assume the length isn't valid
+        //and use -1 instead, per the spec
+        if($encitem['length'] > 3 && is_numeric($encitem['length'])) {
+            $m3utxt .= $encitem['length'].", ";
+        } else {
+            $m3utxt .= "-1, ";
+        }
+
+        //Need a title next.  Use the title of the article for now until a better way comes to mind
+        $m3utxt .= $encitem['title']."\n";
+
+        //Finally the url of the enclosure followed by a blank line
+        $m3utxt .= $encitem['url']."\n\n";
+
+    }
+
+    return($m3utxt);
+}
+
+
+//Build an opml outline containing the requested feed items
+function build_opml_nfitem_feed($uid = NULL, $max = NULL, $archive = FALSE, $feeditems = NULL, $nos3 = FALSE, $s3filename = NULL, $returns3url = FALSE, $giventitle = NULL)
+{
+    //Check parameters
+    if ($uid == NULL) {
+        loggit(2, "The user id is blank or corrupt: [$uid]");
+        return (FALSE);
+    }
+
+    //Includes
+    include get_cfg_var("cartulary_conf") . '/includes/env.php';
+    require_once "$confroot/$libraries/s3/S3.php";
+
+    //Get some essentials
+    $username = get_user_name_from_uid($uid);
+    $prefs = get_user_prefs($uid);
+
+    //Lets set a sane limit for feed size
+    if ($max == NULL) {
+        if (!empty($prefs['maxlist'])) {
+            $max = $prefs['maxlist'];
+        } else {
+            loggit(1, "No max given. Setting to default of: [$default_max_opml_items].");
+            $max = $default_max_opml_items;
+        }
+    }
+
+    //Allow passing in a list of articles as a param
+    if ($feeditems == NULL || !is_array($feeditems)) {
+        loggit(2, "The feed item list passed in was blank or corrupt.");
+        return (FALSE);
+    }
+
+    //Get the dates straight
+    $dateCreated = date("D, d M Y H:i:s O");
+    $dateModified = date("D, d M Y H:i:s O");
+
+    //Set the title
+    $outlinetitle = "Feed item list.";
+    if(!empty($giventitle)) {
+        $outlinetitle = $giventitle;
+    }
+
+    //The feed string
+    $opml = '<?xml version="1.0" encoding="ISO-8859-1"?>' . "\n";
+    $opml .= "<!-- OPML generated by " . $system_name . " v" . $version . " on " . date("D, d M Y H:i:s O") . " -->\n";
+    $opml .= '<opml version="2.0">' . "\n";
+
+    $opml .= "
+      <head>
+        <title>" . xmlentities($giventitle) . "</title>
+        <dateCreated>$dateCreated</dateCreated>
+        <dateModified>$dateModified</dateModified>
+        <ownerName>" . xmlentities(get_user_name_from_uid($uid)) . "</ownerName>
+        <ownerId>" . $uid . "</ownerId>
+        <expansionState></expansionState>
+        <expansionState></expansionState>
+        <vertScrollState>1</vertScrollState>
+        <windowTop>146</windowTop>
+        <windowLeft>107</windowLeft>
+        <windowBottom>468</windowBottom>
+        <windowRight>560</windowRight>
+      </head>\n";
+
+    $opml .= "
+      <body>";
+
+    foreach ($feeditems as $feeditem) {
+        $opml .= "
+              <outline text=\"" . xmlentities(trim(str_replace(array("\r", "\n", "\t", '&#13;'), '', $feeditem['title']))) . "\">
+                      <outline text=\"Link to Article\" type=\"link\" url=\"" . htmlspecialchars($feeditem['url']) . "\" />";
+
+        if (!empty($feeditem['staticurl'])) {
+            $opml .= "        <outline text=\"Archived Version\" type=\"link\" url=\"" . htmlspecialchars($feeditem['staticurl']) . "\" />" . "\n";
+        }
+
+        if (!empty($feeditem['sourceurl']) || !empty($feeditem['sourcetitle'])) {
+            $opml .= '        <outline text="Source: ' . htmlspecialchars(trim($feeditem['sourcetitle'])) . '" type="link" url="' . htmlspecialchars(trim($feeditem['sourceurl'])) . '" />' . "\n";
+        }
+
+
+        $opml .= "      <outline text=\"" . date("D, d M Y H:i", $feeditem['timeadded']) . "\" />
+                      <outline text=\"\" />";
+        foreach (explode("</p>", trim(str_replace(array("\r", "\n", "\t", '&#13;'), '', $feeditem['description']))) as $line) {
+            //loggit(3, "DEBUGLINE: ".$line);
+            $line = trim(strip_tags($line));
+            if (!empty($line)) {
+                $opml .= "
+                      <outline text=\"" . xmlentities($line) . "\" />";
+            }
+        }
+        $opml .= "
+              </outline>\n";
+    }
+
+    $opml .= "      </body>
+  ";
+
+    $opml .= "</opml>";
+
+
+    //If this user has S3 storage enabled, then do it
+    $s3res = FALSE;
+    if ((s3_is_enabled($uid) || sys_s3_is_enabled()) && !$nos3) {
+        //First we get all the key info
+        $s3info = get_s3_info($uid);
+
+        //Get the feed file name
+        if(!empty($s3filename)) {
+            $filename = $s3filename.".".time().".opml";
+        } else {
+            $filename = "feeditemlisting".time().".opml";
+        }
+        $arcpath = '';
+
+        //Was this a request for a monthly archive?
+        if ($archive != FALSE) {
+            $arcpath = "/arc/" . date('Y') . "/" . date('m') . "/" . date('d');
+            //loggit(3, "Archive path: [".$arcpath."]");
+        }
+
+        //Put the file
+        $s3res = putInS3(gzencode($opml), $filename, $s3info['bucket'] . $arcpath, $s3info['key'], $s3info['secret'], array(
+            'Content-Type'      => 'text/xml',
+            'Content-Encoding'  => 'gzip'
+        ));
+        if (!$s3res) {
+            loggit(2, "Could not create S3 file: [$filename] for user: [$username].");
+            //loggit(3, "Could not create S3 file: [$filename] for user: [$username].");
+        } else {
+            $s3url = get_s3_url($uid, $arcpath, $filename);
+            loggit(3, "Wrote feed to S3 at url: [$s3url].");
+        }
+    }
+
+
+    loggit(3, "Built newsfeed item opml feed for user: [$username | $uid].");
+    if($returns3url && $s3res) {
+        return($s3url);
+    }
+    return ($opml);
+}
+
+
+//Convert a news feed to opml structure
+function convert_jsonfeed_to_rss($content = NULL, $max = NULL)
+{
+    //Includes
+    include get_cfg_var("cartulary_conf") . '/includes/env.php';
+
+    //Check params
+    if (empty($content) || !is_jsonfeed($content)) {
+        loggit(2, "The jsonfeed content is blank or corrupt: [$content]");
+        return (FALSE);
+    }
+
+    $jf = json_decode($content, TRUE);
+
+    //Get the latest item publish date
+    $latestDate = 0;
+    foreach( $jf['items'] as $item ) {
+        if( strtotime($item['date_published']) > $latestDate ) $latestDate = strtotime($item['date_published']);
+    }
+    $lastBuildDate = date(DATE_RSS, $latestDate);
+
+    //Create the xml feed
+    $xmlFeed = new SimpleXMLElement('<?xml version="1.0" encoding="UTF-8"?><rss version="2.0"></rss>');
+    $xmlFeed->addChild("channel");
+
+    //Required
+    $xmlFeed->channel->addChild("title", xmlentities($jf['title']));
+    $xmlFeed->channel->addChild("pubDate", $lastBuildDate);
+    $xmlFeed->channel->addChild("lastBuildDate", $lastBuildDate);
+
+    //Optional
+    if(isset($jf['description'])) $xmlFeed->channel->description = xmlentities($jf['description']);
+    if(isset($jf['home_page_url'])) $xmlFeed->channel->link = xmlentities($jf['home_page_url']);
+
+    //Items
+    $count = 0;
+    foreach( $jf['items'] as $item ) {
+        //loggit(3, "DEBUG: ".print_r($item, TRUE));
+
+        $newItem = $xmlFeed->channel->addChild('item');
+
+        if(isset($item['id'])) $newItem->addChild('guid', xmlentities($item['id']));
+        if(isset($item['title'])) $newItem->addChild('title', xmlentities($item['title']));
+        if(isset($item['content_text'])) $newItem->addChild('description', xmlentities($item['content_text']));
+        if(isset($item['content_html'])) $newItem->addChild('description', xmlentities($item['content_html']));
+        if(isset($item['date_published'])) $newItem->addChild('pubDate', $item['date_published']);
+        if(isset($item['url'])) $newItem->addChild('link', xmlentities($item['url']));
+
+        //Enclosures?
+        if(isset($item['attachments'])) {
+            foreach($item['attachments'] as $attachment) {
+                $enclosure = $newItem->addChild('enclosure');
+                $enclosure['url'] = xmlentities($attachment['url']);
+                $enclosure['type'] = xmlentities($attachment['mime_type']);
+                $enclosure['length'] = $attachment['size_in_bytes'];
+            }
+        }
+
+        $count++;
+    }
+
+    //Log and leave
+    loggit(1, "Converted: [$count] items from JSONfeed to RSS.");
+    return($xmlFeed->asXML());
+}
+
+
+//Get poor quality feeds
+function get_poor_feeds()
+{
+
+    //Includes
+    include get_cfg_var("cartulary_conf") . '/includes/env.php';
+
+    //Connect to the database server
+    $dbh = new mysqli($dbhost, $dbuser, $dbpass, $dbname) or loggit(2, "MySql error: " . $dbh->error);
+
+    $thirtydaysago = time() - (86400 * 30);
+
+    //Build the query
+    $sqltxt = "SELECT id, url FROM $table_newsfeed WHERE (contenttype NOT LIKE '%xml%' OR content LIKE '<!DOCTYPE%') AND errors > 100 AND lastupdate < ? AND lastupdate > 0 AND dead = 0 ORDER BY lastupdate ASC ";
+
+    //Run the query
+    $sql = $dbh->prepare($sqltxt) or loggit(2, "MySql error: " . $dbh->error);
+    $sql->bind_param("d", $thirtydaysago) or loggit(2, "MySql error: " . $dbh->error);
+    $sql->execute() or loggit(2, "MySql error: " . $dbh->error);
+    $sql->store_result() or loggit(2, "MySql error: " . $dbh->error);
+
+    //See if there were any feed items returned
+    if ($sql->num_rows() < 1) {
+        $sql->close() or loggit(2, "MySql error: " . $dbh->error);
+        loggit(2, "No poor feeds found.");
+        return (array());
+    }
+
+    $sql->bind_result($fid, $furl) or loggit(2, "MySql error: " . $dbh->error);
+
+    $feeds = array();
+    $count = 0;
+    while ($sql->fetch()) {
+        $feeds[$count] = array(
+            'id'  => $fid,
+            'url' => $furl
+        );
+        $count++;
+    }
+
+    $sql->close();
+
+    loggit(1, "Returning: [$count] poor feeds.");
+    return ($feeds);
+}
+
+
+//Reset feed error count to zero
+function reset_feed_error_count_all($withdead=FALSE)
+{
+    //Includes
+    include get_cfg_var("cartulary_conf") . '/includes/env.php';
+
+    //Connect to the database server
+    $dbh = new mysqli($dbhost, $dbuser, $dbpass, $dbname) or loggit(2, "MySql error: " . $dbh->error);
+
+    //Run the query
+    if($withdead) {
+        $stmt = "UPDATE $table_newsfeed SET errors=0";
+    } else {
+        $stmt = "UPDATE $table_newsfeed SET errors=0 WHERE dead=0";
+    }
+    $sql = $dbh->prepare($stmt) or loggit(2, "MySql error: " . $dbh->error);
+    $sql->execute() or loggit(2, "MySql error: " . $dbh->error);
+    $sql->close();
+
+    //Log and return
+    loggit(1, "Reset error count to zero for all feeds.");
+    return (TRUE);
 }

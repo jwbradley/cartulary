@@ -8,7 +8,7 @@
 function is_outline($content = NULL)
 {
     //Check parameters
-    if ( empty($content) ) {
+    if (empty($content)) {
         loggit(2, "The content to test is blank or corrupt: [$content]");
         return (FALSE);
     }
@@ -19,15 +19,15 @@ function is_outline($content = NULL)
     //Load the content into a simplexml object
     libxml_use_internal_errors(true);
     $x = simplexml_load_string($content, 'SimpleXMLElement', LIBXML_NOCDATA);
-    if(!$x) {
+    if (!$x) {
         loggit(2, "Parsing error when checking for opml content.");
         loggit(2, "---------------------------------------------");
-        foreach(libxml_get_errors() as $error) {
-            loggit(2, "XML PARSER[is_outline()]: ".$error->message);
+        foreach (libxml_get_errors() as $error) {
+            loggit(2, "XML PARSER[is_outline()]: " . $error->message);
         }
         loggit(2, "---------------------------------------------");
         libxml_clear_errors();
-        return(FALSE);
+        return (FALSE);
     }
     libxml_clear_errors();
 
@@ -662,7 +662,7 @@ function update_outline_type($id = NULL, $type = NULL)
         return (FALSE);
     }
     if ($type == NULL) {
-        loggit(2, "The outline type is blank or corrupt: [$title]");
+        loggit(2, "The outline type is blank or corrupt: [$type]");
         return (FALSE);
     }
 
@@ -927,7 +927,7 @@ function get_outlines($uid = NULL, $max = NULL, $otype = NULL, $ididx = NULL)
 
     $sqltxt .= " ORDER BY $table_sopml_outlines.title ASC";
 
-    if ( !empty($max) && is_numeric($max) ) {
+    if (!empty($max) && is_numeric($max)) {
         $sqltxt .= " LIMIT $max";
     }
 
@@ -1018,7 +1018,7 @@ function get_social_outlines($uid = NULL, $max = NULL)
 
     $sqltxt .= " ORDER BY $table_sopml_catalog.linkedon DESC";
 
-    if ( !empty($max) && is_numeric($max) ) {
+    if (!empty($max) && is_numeric($max)) {
         $sqltxt .= " LIMIT $max";
     }
 
@@ -1522,9 +1522,9 @@ function get_all_outlines($max = NULL)
     $dbh = new mysqli($dbhost, $dbuser, $dbpass, $dbname) or loggit(2, "MySql error: " . $dbh->error);
 
     //Grab all the outlines
-    $sqltxt = "SELECT id,url,title,type FROM $table_sopml_outlines";
+    $sqltxt = "SELECT id,url,title,type,lastcheck,lastupdate,lastmod FROM $table_sopml_outlines";
 
-    if ( !empty($max) && is_numeric($max) ) {
+    if (!empty($max) && is_numeric($max)) {
         $sqltxt .= " LIMIT $max";
     }
 
@@ -1541,12 +1541,20 @@ function get_all_outlines($max = NULL)
         return (array());
     }
 
-    $sql->bind_result($oid, $ourl, $otitle, $otype) or loggit(2, "MySql error: " . $dbh->error);
+    $sql->bind_result($oid, $ourl, $otitle, $otype, $olastcheck, $olastupdate, $olastmod) or loggit(2, "MySql error: " . $dbh->error);
 
     $outlines = array();
     $count = 0;
     while ($sql->fetch()) {
-        $outlines[$count] = array('id' => $oid, 'url' => $ourl, 'title' => $otitle, 'type' => $otype);
+        $outlines[$count] = array(
+            'id' => $oid,
+            'url' => $ourl,
+            'title' => $otitle,
+            'type' => $otype,
+            'lastcheck' => $olastcheck,
+            'lastupdate' => $olastupdate,
+            'lastmod' => $olastmod
+        );
         $count++;
     }
 
@@ -1624,7 +1632,7 @@ function get_outline_as_html($uid = NULL, $max = NULL)
              AND ($table_nfcatalog.feedid=$table_nfitem.feedid)";
     $sqltxt .= " ORDER BY $table_nfitem.timestamp DESC";
 
-    if ( !empty($max) && is_numeric($max) ) {
+    if (!empty($max) && is_numeric($max)) {
         $sqltxt .= " LIMIT $max";
     }
 
@@ -1766,32 +1774,32 @@ function build_social_outline($uid = NULL, $archive = FALSE, $nos3 = FALSE)
 
     //Sub list
     //Should we even build it?
-    if( $prefs['hidesublist'] == 0 ) {
-    loggit(3, "User: [$uid] doesn't want their subscription list shown.");
-    $opml .= "
+    if ($prefs['hidesublist'] == 0) {
+        loggit(3, "User: [$uid] doesn't want their subscription list shown.");
+        $opml .= "
 
           <outline text=\"Stuff I Follow\">";
-    foreach ($feeds as $feed) {
-        $hidden = 'sopml:hidden="false"';
-        if ($feed['hidden'] == 1) {
-            $hidden = 'sopml:hidden="true"';
-        }
-        $sticky = 'sopml:sticky="false"';
-        if ($feed['sticky'] == 1) {
-            $sticky = 'sopml:sticky="true"';
-        }
-        $fulltext = 'sopml:fulltext="false"';
-        if ($feed['fulltext'] == 1) {
-            $fulltext = 'sopml:fulltext="true"';
-        }
-        $feedtitle = "Untitled Feed";
-        if (!empty($feed['title'])) {
-            $feedtitle = $feed['title'];
+        foreach ($feeds as $feed) {
+            $hidden = 'sopml:hidden="false"';
+            if ($feed['hidden'] == 1) {
+                $hidden = 'sopml:hidden="true"';
+            }
+            $sticky = 'sopml:sticky="false"';
+            if ($feed['sticky'] == 1) {
+                $sticky = 'sopml:sticky="true"';
+            }
+            $fulltext = 'sopml:fulltext="false"';
+            if ($feed['fulltext'] == 1) {
+                $fulltext = 'sopml:fulltext="true"';
+            }
+            $feedtitle = "Untitled Feed";
+            if (!empty($feed['title'])) {
+                $feedtitle = $feed['title'];
+            }
+            $opml .= "
+              <outline text=\"" . htmlspecialchars(trim(str_replace("\n", '', xmlentities($feedtitle)))) . "\" type=\"rss\" description=\"\" xmlUrl=\"" . htmlspecialchars($feed['url']) . "\" sopml:disposition=\"sub\" sopml:contains=\"mixed\" sopml:attention=\"50\" $sticky $hidden $fulltext />";
         }
         $opml .= "
-              <outline text=\"" . htmlspecialchars(trim(str_replace("\n", '', xmlentities($feedtitle)))) . "\" type=\"rss\" description=\"\" xmlUrl=\"" . htmlspecialchars($feed['url']) . "\" sopml:disposition=\"sub\" sopml:contains=\"mixed\" sopml:attention=\"50\" $sticky $hidden $fulltext />";
-    }
-    $opml .= "
           </outline>";
     }
 
@@ -1817,7 +1825,10 @@ function build_social_outline($uid = NULL, $archive = FALSE, $nos3 = FALSE)
         }
 
         //Put the file
-        $s3res = putInS3($opml, $filename, $s3info['bucket'] . $arcpath, $s3info['key'], $s3info['secret'], "text/xml");
+        $s3res = putInS3(gzencode($opml), $filename, $s3info['bucket'] . $arcpath, $s3info['key'], $s3info['secret'], array(
+            'Content-Type'      => 'text/xml',
+            'Content-Encoding'  => 'gzip'
+        ));
         if (!$s3res) {
             loggit(2, "Could not create S3 file: [$filename] for user: [$username].");
             //loggit(3, "Could not create S3 file: [$filename] for user: [$username].");
@@ -1883,7 +1894,7 @@ function build_reading_list($title = NULL, $uid = NULL, $oid = NULL, $nos3 = FAL
             $feed = get_feed_info($ofeed);
             //loggit(3, print_r($feed, TRUE));
             $opml .= "
-              <outline text=\"" . trim(str_replace("\n", '', htmlspecialchars($feed['title']))) . "\" description=\"\" htmlUrl=\"" . htmlspecialchars($feed['link']) . "\" xmlUrl=\"" . htmlspecialchars($feed['url']) . "\" />";
+              <outline text=\"" . trim(str_replace("\n", '', htmlspecialchars($feed['title']))) . "\" description=\"\" type=\"rss\" htmlUrl=\"" . htmlspecialchars($feed['link']) . "\" xmlUrl=\"" . htmlspecialchars($feed['url']) . "\" />";
         }
     }
 
@@ -1908,7 +1919,10 @@ function build_reading_list($title = NULL, $uid = NULL, $oid = NULL, $nos3 = FAL
         }
 
         //Put the file
-        $s3res = putInS3($opml, $filename, $s3info['bucket'] . $path, $s3info['key'], $s3info['secret'], "text/xml");
+        $s3res = putInS3(gzencode($opml), $filename, $s3info['bucket'] . $path, $s3info['key'], $s3info['secret'], array(
+            'Content-Type'      => 'text/xml',
+            'Content-Encoding'  => 'gzip'
+        ));
         if (!$s3res) {
             loggit(2, "Could not create S3 file: [$filename] for user: [$username].");
             //loggit(3, "Could not create S3 file: [$filename] for user: [$username].");
@@ -2122,20 +2136,101 @@ function convert_opml_to_html($content = NULL, $max = NULL)
 
         $text = trim(html_entity_decode($text));
 
-        if(!empty($link)) {
+        if (!empty($link)) {
             $line .= "<p><a href=\"$link\">$text</a></p>";
         } else {
             $line .= "<p>$text</p>";
         }
 
-        if(empty($text)) {
-            $line ="<br/>";
+        if (empty($text)) {
+            $line = "<br/>";
         }
 
-        $html .= $line."\n";
+        $html .= $line . "\n";
 
         $count++;
     }
+
+    //Collapse muliple br tags
+    $output = preg_replace("/(<br\s*\/?>\s*)+/", "<br/>", $html);
+
+    //Log and leave
+    loggit(3, "Got [$count] items from the opml document.");
+    return ($output);
+}
+
+
+//Convert an opml document to html
+function convert_opml_to_ia($content = NULL, $link = NULL, $max = NULL)
+{
+    //Check params
+    if ($content == NULL) {
+        loggit(2, "The opml content is blank or corrupt: [$content]");
+        return (FALSE);
+    }
+
+    //Includes
+    include get_cfg_var("cartulary_conf") . '/includes/env.php';
+
+    //Parse it
+    libxml_use_internal_errors(true);
+    $x = simplexml_load_string($content, 'SimpleXMLElement', LIBXML_NOCDATA);
+    libxml_clear_errors();
+
+    //Roll through all of the outline nodes
+    $nodes = $x->xpath('//outline[not(@type="collaborate") and not(@type="menu") and not(ancestor::outline[@type="menu"])]');
+    if (empty($nodes)) {
+        loggit(3, "This opml document is blank.");
+        return (-2);
+    }
+
+    //Run through each node and convert it to an html element
+    $count = 0;
+    $html = "";
+    $html .= "              <!doctype html>\n";
+    $html .= "              <html lang=\"en\" prefix=\"op: http://media.facebook.com/op#\">\n";
+    $html .= "              <head>\n";
+    $html .= "                  <meta charset=\"utf-8\">\n";
+    $html .= "                  <meta property=\"op:markup_version\" content=\"v1.0\">\n";
+    $html .= "                  <meta property=\"fb:article_style\" content=\"default\">\n";
+    $html .= "                  <link rel=\"canonical\" href=\"$link\">\n";
+    $html .= "              </head>\n";
+    $html .= "              <body>\n";
+    $html .= "              <article>\n";
+    $html .= "                  <header>\n";
+    $html .= "                      <h1>" . (string)$x->head->title . "</h1>\n";
+    $html .= "                      <time class=\"op-published\" datetime=\"" . (string)$x->head->dateModified . "\"></time>\n";
+    $html .= "                      <time class=\"op-modified\" dateTime=\"" . (string)$x->head->dateModified . "\"></time>\n";
+    foreach ($nodes as $entry) {
+        $line = "";
+        loggit(1, "DEBUG(entry): ".print_r($entry, TRUE));
+
+        $text = (string)$entry->attributes()->text;
+        $name = (string)$entry->attributes()->name;
+        $link = (string)$entry->attributes()->url;
+        $type = (string)$entry->attributes()->type;
+
+        $text = trim(html_entity_decode($text));
+
+        if (!empty($link)) {
+            $line .= "                      <p><a href=\"$link\">$text</a></p>\n";
+        } else {
+            $line .= "                      <p>$text</p>\n";
+        }
+
+        if (empty($text)) {
+            $line = "                      <br>\n";
+        }
+
+        $html .= $line . "\n";
+
+        $count++;
+    }
+
+    $html .= "                  </header>\n";
+    $html .= "              </article>\n";
+    $html .= "              </body>\n";
+    $html .= "        ";
 
     //Collapse muliple br tags
     $output = preg_replace("/(<br\s*\/?>\s*)+/", "<br/>", $html);
@@ -2269,20 +2364,20 @@ XSLTSTRING;
     $xslt = new XSLTProcessor();
     $xslt->importStylesheet(new SimpleXMLElement($xslt_string));
     $x = simplexml_load_string($content, 'SimpleXMLElement', LIBXML_NOCDATA);
-    if(!$x) {
+    if (!$x) {
         libxml_clear_errors();
         loggit(2, "Parsing error when checking for opml content.");
-        return("");
+        return ("");
     }
     $xml = $xslt->transformToXml($x);
     libxml_clear_errors();
 
-    return($xml);
+    return ($xml);
 }
 
 
 //Recursive function for parsing an entire outline structure into html format
-function buildHtmlFromOpmlRecursive($x = NULL, &$html, $indent = 0, $line = 0, $expansionState = array(), $expand = 1, $expanded = FALSE, &$parents, &$extrahtml, $menuexists = 0, &$extrahead)
+function buildHtmlFromOpmlRecursive($x = NULL, &$html, $indent = 0, $line = 0, $expansionState = array(), $expand = 1, $expanded = FALSE, &$parents, &$extrahtml, $menuexists = 0, &$extrahead, $cindent = 0)
 {
 
     include get_cfg_var("cartulary_conf") . '/includes/env.php';
@@ -2296,56 +2391,65 @@ function buildHtmlFromOpmlRecursive($x = NULL, &$html, $indent = 0, $line = 0, $
 
         //Set up class strings for different conditions
         $classes = "outline";
-        if( !empty($type) && $type != "outline" ) {
+        if (!empty($type) && $type != "outline") {
             $classes .= " $type";
         }
 
         //Push the current type onto the stack
-        if( ($type == "tabs" || $type == "html" || $type == "document" || $type == "menu" || $type == "presentation") && end(array_values($parents)) != "tabs" ) {
+        if (($type == "tabs" || $type == "html" || $type == "document" || $type == "menu" || $type == "presentation" || $type == "code") && end(array_values($parents)) != "tabs") {
             array_push($parents, $type);
+            $cindent=0;
         }
 
         //If no expansionState value matches the current visible node count then add a collapsed class
         $exco = "";
-        if( !in_array($expand, $expansionState) ) {  $exco .= " collapsed";  }
+        if (!in_array($expand, $expansionState)) {
+            $exco .= " collapsed";
+        }
 
         //If this is an outline node, open a tag for it
-        if( (string)$child->getName() == "outline" ) {
-            if ($type == "link") {
+        if ((string)$child->getName() == "outline") {
+            if ($type == "link" || $type == "enclosure" || $type == "include") {
                 $nodetext = "<a href=\"$link\" target=\"_blank\">" . (string)$child->attributes()->text . "</a>";
             } else {
                 $nodetext = (string)$child->attributes()->text;
             }
-            if( empty($nodetext) ) {
+            if ($type == "code" && !isset($child->outline) ) {
+                $nodetext = "<ul class=\"outline\"><li class=\"ou outline\"><pre><code>    " . (string)$child->attributes()->text . "</code></pre></li></ul>";
+            }
+            if (empty($nodetext) && $type != "code") {
                 $nodetext = "&nbsp;";
             }
 
             //Check for aspects of the outline node that might need more classes added for styling
-            if( stripos($nodetext, "<a") !== FALSE ) {
+            if (stripos($nodetext, "<a") !== FALSE) {
                 $classes .= " wanchor";
             }
-            if( stripos($nodetext, "<img") !== FALSE ) {
+            if (stripos($nodetext, "<img") !== FALSE) {
                 $classes .= " wimg";
             }
 
             //Set the variable for holding the next content under certain conditions like tabs
-            if( in_array('tab', $parents) ) {
+            if (in_array('tab', $parents)) {
                 $htmlcontent =& $extrahtml;
             } else {
                 $htmlcontent =& $html;
             }
 
             //Set an expanded class on outline nodes that match the expansionState counter
-            $parent = end(array_values($parents));
-            if ( $type == "menu" && $menuexists == 0 ) {
+            $parent_tmp = array_values($parents);
+            $parent = end($parent_tmp);
+            if ($type == "menu" && $menuexists == 0) {
                 $htmlcontent .= "<div class=\"navbar navbar-fixed-top navbar-inverse\" role=\"navigation\">\n<div class=\"container\">\n<div class=\"navbar-header\">\n<button type=\"button\" class=\"navbar-toggle\" data-toggle=\"collapse\" data-target=\"#navbar-collapse-1\">\n<span class=\"sr-only\">Toggle navigation</span>\n<span class=\"icon-bar\"></span>\n<span class=\"icon-bar\"></span>\n<span class=\"icon-bar\"></span>\n</button>\n<a class=\"navbar-brand\" href='#'>$nodetext</a>\n</div>\n<div class=\"collapse navbar-collapse\" id=\"navbar-collapse-1\"><ul class=\"nav navbar-nav\">\n";
                 $menuexists++;
-            } else
-            if ( $type == "collaborate" ) {
+            } else if ($type == "code" && isset($child->outline)) {
+                $htmlcontent .= "<ul class=\"outline\"><li class=\"ou outline\"><pre><code>" . $nodetext;
+            } else if (in_array('code', $parents)) {
+                $htmlcontent .= "\n" . str_repeat('    ', $cindent) . "$nodetext\n";
+            } else if ($type == "collaborate") {
                 $colltime = time();
                 $extrahead .= "<script>var TogetherJSConfig_findRoom = \"$colltime\";var TogetherJSConfig_inviteFromRoom = true; var TogetherJSConfig_suppressJoinConfirmation = true;</script><script id='togetherJS' src=\"//togetherjs.com/togetherjs-min.js\"></script>";
-            } else
-            if ( $type == "presentation" ) {
+            } else if ($type == "presentation") {
                 //Bring in the reveal.js style
                 $fh = fopen("$confroot/$templates/$cg_editor_presentation_style_filename", "r");
                 $rftemplate = fread($fh, filesize("$confroot/$templates/$cg_editor_presentation_style_filename"));
@@ -2362,51 +2466,44 @@ function buildHtmlFromOpmlRecursive($x = NULL, &$html, $indent = 0, $line = 0, $
 
                 //Begin the slide sections
                 $htmlcontent .= "<section>$nodetext</section>";
-            } else
-            if ( $type == "tabs" ) {
-                $html .= "\n" . str_repeat('    ', $indent+1) . "<ul class=\"nav nav-tabs\" id=\"myTab\">";
+            } else if ($type == "tabs") {
+                $html .= "\n" . str_repeat('    ', $indent + 1) . "<ul class=\"nav nav-tabs\" id=\"myTab\">";
                 $extrahtml .= "<div class=\"tab-content\">\n";
-            } else
-            if ( $parent == "slide" || $type == "slide" || in_array('slide', $parents)) {
-                if( isset($child->outline) ) {
-                    $htmlcontent .= "\n" . str_repeat('    ', $indent+1) . "<section>$nodetext</section><section>\n";
+            } else if ($parent == "slide" || $type == "slide" || in_array('slide', $parents)) {
+                if (isset($child->outline)) {
+                    $htmlcontent .= "\n" . str_repeat('    ', $indent + 1) . "<section>$nodetext</section><section>\n";
                 } else {
-                    $htmlcontent .= "\n" . str_repeat('    ', $indent+1) . "<section>$nodetext</section>\n";
+                    $htmlcontent .= "\n" . str_repeat('    ', $indent + 1) . "<section>$nodetext</section>\n";
                 }
-            } else
-            if ( $parent == "presentation" ) {
+            } else if ($parent == "presentation") {
                 array_push($parents, 'slide');
-                $htmlcontent .= "\n" . str_repeat('    ', $indent+1) . "<section>$nodetext</section>\n";
-            } else
-            if ( $parent == "tabs" ) {
+                $htmlcontent .= "\n" . str_repeat('    ', $indent + 1) . "<section>$nodetext</section>\n";
+            } else if ($parent == "tabs") {
                 array_push($parents, 'tab');
-                $tabid = 'tab'.stripText((string)$child->attributes()->text);
-                $html .= "\n" . str_repeat('    ', $indent+1) . "<li><a href=\"#$tabid\" data-toggle=\"tab\">".strip_tags($nodetext)."</a></li>";
+                $tabid = 'tab' . stripText((string)$child->attributes()->text);
+                $html .= "\n" . str_repeat('    ', $indent + 1) . "<li><a href=\"#$tabid\" data-toggle=\"tab\">" . strip_tags($nodetext) . "</a></li>";
                 $extrahtml .= "<div class=\"tab-pane\" id=\"$tabid\">\n";
-            } else
-            if ( in_array('menu', $parents) ) {
-                if( stripos($nodetext, "navatar") !== FALSE ) {
-                    $htmlcontent .= "\n" . str_repeat('    ', $indent+1) . "</ul><ul class=\"nav navbar-nav pull-right\"><li>$nodetext</li></ul><ul class=\"nav navbar-nav\">";
+            } else if (in_array('menu', $parents)) {
+                if (stripos($nodetext, "navatar") !== FALSE) {
+                    $htmlcontent .= "\n" . str_repeat('    ', $indent + 1) . "</ul><ul class=\"nav navbar-nav pull-right\"><li>$nodetext</li></ul><ul class=\"nav navbar-nav\">";
                 } else {
-                    $htmlcontent .= "\n" . str_repeat('    ', $indent+1) . "<li>$nodetext</li>";
+                    $htmlcontent .= "\n" . str_repeat('    ', $indent + 1) . "<li>$nodetext</li>";
                 }
-            } else
-            if ( in_array('html', $parents) ) {
+            } else if (in_array('html', $parents)) {
                 $htmlcontent .= str_repeat('    ', $indent) . "$nodetext\n";
-            } else
-            if ( $type == 'html') {
+            } else if ($type == 'html') {
                 $oldindent = $indent;
                 $indent = 0;
                 $htmlcontent .= str_repeat('    ', $indent) . "$nodetext\n";
             } else {
-                if( isset($child->outline) ) {
-                    $expandible = "<li class=\"owedge$exco\"><span>$nodetext</span>";
+                if (isset($child->outline)) {
+                    $expandible = "<li data-line=\"$line\" class=\"owedge$exco\"><span>$nodetext</span>";
                 } else {
                     $expandible = "";
                     $expandible = "<li class=\"ou $classes\">$nodetext";
                     $exco = "";
                 }
-                $htmlcontent .= "\n" . str_repeat('    ', $indent+1) . "<ul class=\"$classes\">$expandible";
+                $htmlcontent .= "\n" . str_repeat('    ', $indent + 1) . "<ul class=\"$classes\">$expandible";
             }
         }
 
@@ -2414,71 +2511,75 @@ function buildHtmlFromOpmlRecursive($x = NULL, &$html, $indent = 0, $line = 0, $
         $lb = $line + 1;
         $ne = $expand;
         $ex = FALSE;
-        if( in_array($expand, $expansionState) ) {  $ex = TRUE;  }
-        if( $expanded || $ex ) {  $ne = $expand + 1;  }
+        if (in_array($expand, $expansionState)) {
+            $ex = TRUE;
+        }
+        if ($expanded || $ex) {
+            $ne = $expand + 1;
+        }
 
         //Make the recursion call for the next set of nodes
-        list($line, $expand) = buildHtmlFromOpmlRecursive($child, $html, $indent + 1, $line + 1, $expansionState, $ne, $ex, $parents, $extrahtml, $menuexists, $extrahead);
+        list($line, $expand) = buildHtmlFromOpmlRecursive($child, $html, $indent + 1, $line + 1, $expansionState, $ne, $ex, $parents, $extrahtml, $menuexists, $extrahead, $cindent + 1);
 
 
         //If this is an outline node, close the open tag.  We take care to keep the html looking good, so don't add spaces
         //to the end of single line node tags
-        $indention = $indent+1;
-        if( $lb == $line ) {  $indention = 0;  }
-        if( (string)$child->getName() == "outline" ) {
-            if ( $type == "menu" && $menuexists < 2 ) {
-                $htmlcontent .= str_repeat('    ', $indention) ."</ul>\n</div>\n</div>\n</div>";
+        $indention = $indent + 1;
+        if ($lb == $line) {
+            $indention = 0;
+        }
+        if ((string)$child->getName() == "outline") {
+            if ($type == "menu" && $menuexists < 2) {
+                $htmlcontent .= str_repeat('    ', $indention) . "</ul>\n</div>\n</div>\n</div>";
                 $menuexists++;
-            } else
-            if ( $type == "collaborate" ) {
-                    $htmlcontent .= "\n";
-            } else
-            if ( $type == "presentation" ) {
+            } else if ($type == "code" && isset($child->outline)) {
+                $htmlcontent .= "</pre></code></li></ul>";
+            } else if ($type == "collaborate") {
+                $htmlcontent .= "\n";
+            } else if ($type == "presentation") {
                 $htmlcontent .= "";
-            } else
-            if ($type == "tabs") {
-                $html .= str_repeat('    ', $indention) ."</ul>\n";
-                $extrahtml .= str_repeat('    ', $indention) ."</div>\n";
-            } else
-            if ( $parent == "slide" || $type == "slide" || in_array('slide', $parents) ) {
-                if( isset($child->outline) ) {
-                    $htmlcontent .= "\n" . str_repeat('    ', $indent+1) . "</section>\n";
+            } else if ($type == "tabs") {
+                $html .= str_repeat('    ', $indention) . "</ul>\n";
+                $extrahtml .= str_repeat('    ', $indention) . "</div>\n";
+            } else if ($parent == "slide" || $type == "slide" || in_array('slide', $parents)) {
+                if (isset($child->outline)) {
+                    $htmlcontent .= "\n" . str_repeat('    ', $indent + 1) . "</section>\n";
                 } else {
-                    $htmlcontent .= "\n" . str_repeat('    ', $indent+1) . "\n";
+                    $htmlcontent .= "\n" . str_repeat('    ', $indent + 1) . "\n";
                 }
-            } else
-            if ( $parent == "presentation" ) {
+            } else if ($parent == "presentation") {
                 array_pop($parents);
-                $htmlcontent .= "\n" . str_repeat('    ', $indent+1) . "\n";
-            } else
-            if ($parent == "tabs") {
+                $htmlcontent .= "\n" . str_repeat('    ', $indent + 1) . "\n";
+            } else if ($parent == "tabs") {
                 array_pop($parents);
-                $html .= str_repeat('    ', $indention) ."\n";
-                $extrahtml .= str_repeat('    ', $indention) ."</div>\n";
-            } else
-            if ( in_array('menu', $parents) && $type != "html") {
-                $htmlcontent .= "\n" . str_repeat('    ', $indent+1) . "\n";
-            } else
-            if ( in_array('html', $parents) ) {
-                $htmlcontent .= str_repeat('    ', $indent) ."";
-            } else
-            if ( $type == 'html') {
-                $htmlcontent .= str_repeat('    ', $indent) ."";
+                $html .= str_repeat('    ', $indention) . "\n";
+                $extrahtml .= str_repeat('    ', $indention) . "</div>\n";
+            } else if (in_array('menu', $parents) && $type != "html") {
+                $htmlcontent .= "\n" . str_repeat('    ', $indent + 1) . "\n";
+            } else if (in_array('html', $parents)) {
+                $htmlcontent .= str_repeat('    ', $indent) . "";
+            } else if (in_array('code', $parents)) {
+                $htmlcontent .= str_repeat('    ', $indent) . "";
+            } else if ($type == 'html') {
+                $htmlcontent .= str_repeat('    ', $indent) . "";
                 $indent = $oldindent;
             } else {
-                $htmlcontent .= str_repeat('    ', $indention) ."</li></ul>\n";
+                $htmlcontent .= str_repeat('    ', $indention) . "</li></ul>\n";
             }
 
         }
 
-        if( $indent == 0 && $ex == FALSE ) {  $expand++;  }
-        if( ($type == "tabs" || $type == "html" || $type == "document" || $type == "menu" || $type == "presentation") && end(array_values($parents)) != "tabs" ) {
+        if ($indent == 0 && $ex == FALSE) {
+            $expand++;
+        }
+        if (($type == "tabs" || $type == "html" || $type == "document" || $type == "menu" || $type == "presentation" || $type == "code") && end(array_values($parents)) != "tabs") {
             array_pop($parents);
+            $cindent = 0;
         }
     }
 
 
-    return(array($line, $expand));
+    return (array($line, $expand));
 }
 
 
@@ -2500,7 +2601,7 @@ function process_opml_to_html($content = NULL, $title = "", $uid = NULL, $dodisq
     $prefs = get_user_prefs($uid);
     $analyticscode = $prefs['analyticscode'];
     $disqus = "";
-    if( $dodisqus && !empty($prefs['disqus_shortname']) ) {
+    if ($dodisqus && !empty($prefs['disqus_shortname'])) {
         $disqus = $cg_disqus_embed;
         $disqus = str_replace('[SHORTNAME]', $prefs['disqus_shortname'], $disqus);
     }
@@ -2517,18 +2618,18 @@ function process_opml_to_html($content = NULL, $title = "", $uid = NULL, $dodisq
 
     //Was there an opml url given
     $linktoopml = "";
-    if( !empty($opmlurl) ) {
+    if (!empty($opmlurl)) {
         loggit(3, "DEBUG: Opml url is: [$opmlurl].");
         $linktoopml = "<a class=\"opmlicon\" href=\"$opmlurl\" title=\"Link to the opml for this document.\">&nbsp;</a>";
     }
 
     //Get byline if a username was given or if not, look for an author element in the opml
-    if( !empty($uid) ) {
-        $byline = '<br><small>by '.get_user_name_from_uid($uid).'</small>';
+    if (!empty($uid)) {
+        $byline = '<br><small>by ' . get_user_name_from_uid($uid) . '</small>';
     } else {
         $authorname = (string)$x->head->ownerName;
-        if( !empty($authorname) ) {
-            $byline = '<br><small>by '.$authorname.'</small>';
+        if (!empty($authorname)) {
+            $byline = '<br><small>by ' . $authorname . '</small>';
         }
     }
 
@@ -2548,7 +2649,7 @@ function process_opml_to_html($content = NULL, $title = "", $uid = NULL, $dodisq
     buildHtmlFromOpmlRecursive($x->body, $body, 0, 1, $expansionState, 1, FALSE, $parents, $extrabody, 0, $extrahead);
 
     //Put in some extra space if we don't have a title
-    if( empty($title) || $rendertitle == FALSE ) {
+    if (empty($title) || $rendertitle == FALSE) {
         $bodypadding = "120px";
     } else {
         $bodypadding = "60px";
@@ -2556,20 +2657,20 @@ function process_opml_to_html($content = NULL, $title = "", $uid = NULL, $dodisq
 
     //Generate a qr code for this file
     $qrcode = create_s3_qrcode_from_url($uid, $htmlurl);
-    $qrimg = "<img class='pull-right qrcode' title ='This code always links to this page url.' src='".$qrcode."' />";
-    if( !empty($qrcode) ) {
+    $qrimg = "<img class='pull-right qrcode' title ='This code always links to this page url.' src='" . $qrcode . "' />";
+    if (!empty($qrcode)) {
         $qrline = "<div class='row'>$qrimg</div>";
     }
 
     //See what type of build out do we need?
     //Get the title
-    if( !empty($title) ) {
-        $titleline = '<div class="page-header">'.$qrimg.'<h2>'.$title.$byline.'</h2></div>';
+    if (!empty($title)) {
+        $titleline = '<div class="page-header">' . $qrimg . '<h2>' . $title . $byline . '</h2></div>';
         $qrline = "";
     }
     $precontent = "";
     $container_start = "<div class='container'>";
-    $container_stop  = "</div>\n<div class='container text-right'><script>document.write(\"<small>Last Modified \" + document.lastModified + \" by <a href='http://freedomcontroller.com'>Freedom Controller</a></small>\")</script> $linktoopml<div class='ocomments'><div id='disqus_thread'></div></div></div>";
+    $container_stop = "</div>\n<div class='container text-right'><script>document.write(\"<small>Last Modified \" + document.lastModified + \" by <a href='http://freedomcontroller.com'>Freedom Controller</a></small>\")</script> $linktoopml<div class='ocomments'><div id='disqus_thread'></div></div></div>";
     $inlinestyle = <<<OPML2HTMLCSS
 	<style type="text/css">
 		body {
@@ -2611,6 +2712,20 @@ function process_opml_to_html($content = NULL, $title = "", $uid = NULL, $dodisq
 			margin: 10px 0;
 		}
 
+        ul.outline.code ul.outline.code li {
+            margin: -30px 0;
+        }
+
+        body > div.container > ul.outline {
+            margin: 30px 0;
+        }
+
+        ul.outline li pre code {
+          overflow: auto;
+          word-wrap: normal;
+          white-space: pre;
+        }
+
 		ul.outline li {
 			font-size: 16px;
 			line-height: 24px;
@@ -2646,20 +2761,22 @@ function process_opml_to_html($content = NULL, $title = "", $uid = NULL, $dodisq
 	</style>
 
 OPML2HTMLCSS;
-    if( stripos($extrahead, 'revealJS') !== FALSE ) {
-        if( !empty($title) ) { $titleline = '<section><h2>'.$title.$byline.'</h2></section>'; }
+    if (stripos($extrahead, 'revealJS') !== FALSE) {
+        if (!empty($title)) {
+            $titleline = '<section><h2>' . $title . $byline . '</h2></section>';
+        }
         $container_start = "<div class=\"reveal\"><div class=\"slides\">";
-        $container_stop  = "</div></div>";
+        $container_stop = "</div></div>";
         $inlinestyle = "";
     }
 
-    if( strpos($extrahead, 'togetherJS') !== FALSE ) {
+    if (strpos($extrahead, 'togetherJS') !== FALSE) {
         $precontent .= "<div id=\"togetherjs-div\"><button id=\"start-togetherjs\" type=\"button\" onclick=\"TogetherJS(this); return false\" data-end-togetherjs-html=\"End TogetherJS\">Collaborate!</button></div>\n";
         $inlinestyle .= "<style>div#togetherjs-div { z-index:9999; position:absolute; top:10px; right:10px; float:right; }</style>";
     }
 
     //Was title rendering set to false?
-    if( $rendertitle == FALSE ) {
+    if ($rendertitle == FALSE) {
         $titleline = "";
         $byline = "";
     }
@@ -2700,6 +2817,51 @@ OPML2HTMLCSS;
 	<script src="//code.jquery.com/jquery-1.11.0.min.js"></script>
 	<script src="//netdna.bootstrapcdn.com/bootstrap/3.1.1/js/bootstrap.min.js"></script>
 	<script>
+	    var goToTab = "";
+	    var goToNode = "";
+		          
+	    console.log("winlochash: " + window.location.hash);
+	    
+
+            var hash = window.location.hash;
+            var comma = hash.indexOf(",");
+            if( comma > -1) {
+                goToTab = hash.substring(0,comma);
+                goToNode = hash.substring(comma+1);
+            } else {
+                goToTab = hash.substring(0);
+            }
+            console.log("goToTab string: " + goToTab);
+            console.log("goToNode string: " + goToNode);
+            
+            goToTab && $('ul.nav a[href="' + goToTab + '"]').tab('show');
+        
+            $('#myTab a').click(function (e) {
+                $(this).tab('show');
+                var scrollmem = $('body').scrollTop() || $('html').scrollTop();
+                window.location.hash = this.hash;
+                $('html,body').scrollTop(scrollmem);
+                goToTab = this.hash;  
+                console.log("setgoToTab: "+ goToTab);
+            });            
+            
+            //If there are tabs then show the first one
+            console.log("goToTab: " + goToTab);            
+            if( $('#myTab').length > 0 && window.location.hash == "" ) {
+                $('#myTab a:first').trigger('click');   
+                console.log("goToTab: " + goToTab);
+            }
+
+            if(goToNode != "") {
+                var openWedge = $('li.owedge[data-line="'+goToNode+'"]');
+                openWedge.removeClass('collapsed');
+                openWedge.parents().removeClass('collapsed');
+                console.log(openWedge);
+                if(typeof openWedge !== "undefined" && typeof openWedge.offset() !== "undefined" && typeof openWedge.offset().top !== "undefined") {
+                    $([document.documentElement, document.body]).scrollTop(openWedge.offset().top);                    
+                }
+            }
+	    
         $(document).ready(function() {
             //Dont propagate link click events up to the wedge text
             $('li.owedge a').click(function(event) {
@@ -2708,16 +2870,17 @@ OPML2HTMLCSS;
             //Toggle wedges
             $('li.owedge span').click(function() {
                 $(this).parent().toggleClass('collapsed');
+                //if( !$(this).parent().hasClass('collapsed') && $('#myTab').length > 0 ) {
+                    window.location.hash = goToTab + "," + $(this).parent().data("line");
+                //}
             });
-            //If there are tabs then show the first one
-            if( $('#myTab').length > 0 ) {
-                $('#myTab a:first').tab('show');
-            }
+
             //If this is a presentation start reveal
             if( $('div.reveal').length > 0 ) {
                 Reveal.initialize({ controls: true, progress: true, history: true, center: true, theme: 'default', transition: 'default' });
             }
         });
+
 	</script>
     $analyticscode
   </body>
@@ -2759,12 +2922,18 @@ function get_social_outline_directory($query = NULL, $max = NULL)
 
 
 //Return a list of files recently edited by this user in the editor
-function get_recent_files($uid = NULL, $max = NULL)
+function get_recent_files($uid = NULL, $max = NULL, $type = 0)
 {
     //Check parameters
     if (empty($uid)) {
         loggit(2, "The user id given is corrupt or blank: [$uid]");
         return (FALSE);
+    }
+
+    //Type check?
+    $notype = FALSE;
+    if ($type == -1) {
+        $notype = TRUE;
     }
 
     //Includes
@@ -2774,7 +2943,11 @@ function get_recent_files($uid = NULL, $max = NULL)
     $dbh = new mysqli($dbhost, $dbuser, $dbpass, $dbname) or loggit(2, "MySql error: " . $dbh->error);
 
     //Do the query
-    $sqltxt = "SELECT title, url, time, disqus, wysiwyg, watched, locked FROM $table_recentfiles WHERE userid=?";
+    if ($notype) {
+        $sqltxt = "SELECT title, url, time, disqus, wysiwyg, watched, locked, type, templatename FROM $table_recentfiles WHERE userid=?";
+    } else {
+        $sqltxt = "SELECT title, url, time, disqus, wysiwyg, watched, locked, type, templatename FROM $table_recentfiles WHERE userid=? AND type=?";
+    }
 
     $sqltxt .= " ORDER BY time DESC";
 
@@ -2786,7 +2959,11 @@ function get_recent_files($uid = NULL, $max = NULL)
 
     loggit(1, "[$sqltxt]");
     $sql = $dbh->prepare($sqltxt) or loggit(2, "MySql error: " . $dbh->error);
-    $sql->bind_param("s", $uid) or loggit(2, "MySql error: " . $dbh->error);
+    if ($notype) {
+        $sql->bind_param("s", $uid) or loggit(2, "MySql error: " . $dbh->error);
+    } else {
+        $sql->bind_param("sd", $uid, $type) or loggit(2, "MySql error: " . $dbh->error);
+    }
     $sql->execute() or loggit(2, "MySql error: " . $dbh->error);
     $sql->store_result() or loggit(2, "MySql error: " . $dbh->error);
 
@@ -2798,7 +2975,7 @@ function get_recent_files($uid = NULL, $max = NULL)
         return (array());
     }
 
-    $sql->bind_result($ftitle, $furl, $ftime, $fdisqus, $fwysiwyg, $fwatched, $flocked) or loggit(2, "MySql error: " . $dbh->error);
+    $sql->bind_result($ftitle, $furl, $ftime, $fdisqus, $fwysiwyg, $fwatched, $flocked, $ftype, $ftemplatename) or loggit(2, "MySql error: " . $dbh->error);
 
     $files = array();
     $count = 0;
@@ -2809,7 +2986,9 @@ function get_recent_files($uid = NULL, $max = NULL)
             'disqus' => $fdisqus,
             'wysiwyg' => $fwysiwyg,
             'watched' => $fwatched,
-            'locked' => $flocked
+            'locked' => $flocked,
+            'type' => $ftype,
+            'templatename' => $ftemplatename
         );
         $count++;
     }
@@ -2873,7 +3052,98 @@ function get_watched_files($max = NULL)
 }
 
 
-//Return a list of files recently edited by this user in the editor
+//Get the file id that corresponds to a file url
+function get_recent_file_id_from_url($uid = NULL, $url = NULL)
+{
+    //Check parameters
+    if (empty($uid)) {
+        loggit(2, "The user id given is corrupt or blank: [$uid]");
+        return (FALSE);
+    }
+    if (empty($url)) {
+        loggit(2, "The url given is corrupt or blank: [$url]");
+        return (FALSE);
+    }
+
+    //Includes
+    include get_cfg_var("cartulary_conf") . '/includes/env.php';
+
+    //Connect to the database server
+    $dbh = new mysqli($dbhost, $dbuser, $dbpass, $dbname) or loggit(2, "MySql error: " . $dbh->error);
+
+    //Do the query
+    $sqltxt = "SELECT id FROM $table_recentfiles WHERE userid=? AND url=?";
+
+    loggit(1, "[$sqltxt]");
+    $sql = $dbh->prepare($sqltxt) or loggit(2, "MySql error: " . $dbh->error);
+    $sql->bind_param("ss", $uid, $url) or loggit(2, "MySql error: " . $dbh->error);
+    $sql->execute() or loggit(2, "MySql error: " . $dbh->error);
+    $sql->store_result() or loggit(2, "MySql error: " . $dbh->error);
+
+    //See if there were any files for this user
+    if ($sql->num_rows() < 1) {
+        $sql->close()
+        or loggit(2, "MySql error: " . $dbh->error);
+        loggit(1, "No file id returned for: [$uid | $url] with the given criteria.");
+        return (-1);
+    }
+
+    $sql->bind_result($fid) or loggit(2, "MySql error: " . $dbh->error);
+    while ($sql->fetch()) {
+        $fileid = $fid;
+    }
+
+    $sql->close() or loggit(2, "MySql error: " . $dbh->error);
+
+    loggit(1, "Returning: [$fileid] for requested file: [$uid | $url]");
+    return ($fileid);
+}
+
+
+//See if a user has permission to handle this file
+function user_can_edit_recent_file_by_id($uid = NULL, $fid = NULL)
+{
+    //Check parameters
+    if (empty($uid)) {
+        loggit(2, "The user id given is corrupt or blank: [$uid]");
+        return (FALSE);
+    }
+    if (empty($fid)) {
+        loggit(2, "The file id given is corrupt or blank: [$fid]");
+        return (FALSE);
+    }
+
+    //Includes
+    include get_cfg_var("cartulary_conf") . '/includes/env.php';
+
+    //Connect to the database server
+    $dbh = new mysqli($dbhost, $dbuser, $dbpass, $dbname) or loggit(2, "MySql error: " . $dbh->error);
+
+    //Do the query
+    $sqltxt = "SELECT id FROM $table_recentfiles WHERE id=? AND userid=?";
+
+    loggit(1, "[$sqltxt]");
+    $sql = $dbh->prepare($sqltxt) or loggit(2, "MySql error: " . $dbh->error);
+    $sql->bind_param("ds", $fid, $uid) or loggit(2, "MySql error: " . $dbh->error);
+    $sql->execute() or loggit(2, "MySql error: " . $dbh->error);
+    $sql->store_result() or loggit(2, "MySql error: " . $dbh->error);
+
+    //See if there were any files for this user
+    $rows = $sql->num_rows();
+    if ($rows != 1) {
+        $sql->close() or loggit(2, "MySql error: " . $dbh->error);
+        loggit(1, "[$rows] records returned for: [$uid | $fid] access check. Only 1 should be returned.");
+        return (FALSE);
+    }
+
+    $sql->close() or loggit(2, "MySql error: " . $dbh->error);
+
+    loggit(1, "User: [$uid] is the owner of file: [$fid].");
+    return (TRUE);
+}
+
+
+//Return a file by its url
 function get_recent_file_by_url($uid = NULL, $url = NULL, $blob = FALSE)
 {
     //Check parameters
@@ -2893,10 +3163,10 @@ function get_recent_file_by_url($uid = NULL, $url = NULL, $blob = FALSE)
     $dbh = new mysqli($dbhost, $dbuser, $dbpass, $dbname) or loggit(2, "MySql error: " . $dbh->error);
 
     //Do the query
-    if( $blob ) {
-        $sqltxt = "SELECT id, title, url, time, disqus, wysiwyg, watched, locked, outline FROM $table_recentfiles WHERE userid=? AND url=?";
+    if ($blob) {
+        $sqltxt = "SELECT id, title, url, time, disqus, wysiwyg, watched, type, locked, articleid, ipfshash, private, privtoken, templatename, outline FROM $table_recentfiles WHERE userid=? AND url=?";
     } else {
-        $sqltxt = "SELECT id, title, url, time, disqus, wysiwyg, watched, locked FROM $table_recentfiles WHERE userid=? AND url=?";
+        $sqltxt = "SELECT id, title, url, time, disqus, wysiwyg, watched, type, locked, articleid, ipfshash, private, privtoken, templatename FROM $table_recentfiles WHERE userid=? AND url=?";
     }
 
 
@@ -2914,10 +3184,10 @@ function get_recent_file_by_url($uid = NULL, $url = NULL, $blob = FALSE)
         return (array());
     }
 
-    if( $blob ) {
-        $sql->bind_result($fid, $ftitle, $furl, $ftime, $fdisqus, $fwysiwyg, $fwatched, $flocked, $foutline) or loggit(2, "MySql error: " . $dbh->error);
+    if ($blob) {
+        $sql->bind_result($fid, $ftitle, $furl, $ftime, $fdisqus, $fwysiwyg, $fwatched, $ftype, $flocked, $farticleid, $ipfshash, $fprivate, $fprivtoken, $ftemplatename, $foutline) or loggit(2, "MySql error: " . $dbh->error);
     } else {
-        $sql->bind_result($fid, $ftitle, $furl, $ftime, $fdisqus, $fwysiwyg, $fwatched, $flocked) or loggit(2, "MySql error: " . $dbh->error);
+        $sql->bind_result($fid, $ftitle, $furl, $ftime, $fdisqus, $fwysiwyg, $fwatched, $ftype, $flocked, $farticleid, $ipfshash, $fprivate, $fprivtoken, $ftemplatename) or loggit(2, "MySql error: " . $dbh->error);
     }
 
 
@@ -2931,9 +3201,257 @@ function get_recent_file_by_url($uid = NULL, $url = NULL, $blob = FALSE)
             'disqus' => $fdisqus,
             'wysiwyg' => $fwysiwyg,
             'watched' => $fwatched,
-            'locked' => $flocked
+            'type' => $ftype,
+            'locked' => $flocked,
+            'articleid' => $farticleid,
+            'ipfshash' => $ipfshash,
+            'private' => $fprivate,
+            'privtoken' => $fprivtoken,
+            'templatename' => $ftemplatename
         );
-        if( $blob ) {
+        if ($blob) {
+            $files[$count]['content'] = $foutline;
+        }
+        $count++;
+    }
+
+    $sql->close() or loggit(2, "MySql error: " . $dbh->error);
+
+    loggit(1, "Returning: [$count] files for user: [$uid]");
+    return ($files[0]);
+}
+
+
+//Return a file by its id
+function get_recent_file_by_id($uid = NULL, $fileid = NULL, $blob = FALSE)
+{
+    //Check parameters
+    if (empty($uid)) {
+        loggit(2, "The user id given is corrupt or blank: [$uid]");
+        return (FALSE);
+    }
+    if (empty($fileid)) {
+        loggit(2, "The file id given is corrupt or blank: [$fileid]");
+        return (FALSE);
+    }
+
+    //Includes
+    include get_cfg_var("cartulary_conf") . '/includes/env.php';
+
+    //Connect to the database server
+    $dbh = new mysqli($dbhost, $dbuser, $dbpass, $dbname) or loggit(2, "MySql error: " . $dbh->error);
+
+    //Do the query
+    if ($blob) {
+        $sqltxt = "SELECT id, title, url, time, disqus, wysiwyg, watched, type, locked, articleid, ipfshash, private, privtoken, templatename, outline FROM $table_recentfiles WHERE userid=? AND id=?";
+    } else {
+        $sqltxt = "SELECT id, title, url, time, disqus, wysiwyg, watched, type, locked, articleid, ipfshash, private, privtoken, templatename FROM $table_recentfiles WHERE userid=? AND id=?";
+    }
+
+
+    loggit(1, "[$sqltxt]");
+    $sql = $dbh->prepare($sqltxt) or loggit(2, "MySql error: " . $dbh->error);
+    $sql->bind_param("sd", $uid, $fileid) or loggit(2, "MySql error: " . $dbh->error);
+    $sql->execute() or loggit(2, "MySql error: " . $dbh->error);
+    $sql->store_result() or loggit(2, "MySql error: " . $dbh->error);
+
+    //See if there were any files for this user
+    if ($sql->num_rows() < 1) {
+        $sql->close()
+        or loggit(2, "MySql error: " . $dbh->error);
+        loggit(1, "No files returned for: [$uid | $fileid] with the given criteria.");
+        return (array());
+    }
+
+    if ($blob) {
+        $sql->bind_result($fid, $ftitle, $furl, $ftime, $fdisqus, $fwysiwyg, $fwatched, $ftype, $flocked, $farticleid, $ipfshash, $fprivate, $fprivtoken, $ftemplatename, $foutline) or loggit(2, "MySql error: " . $dbh->error);
+    } else {
+        $sql->bind_result($fid, $ftitle, $furl, $ftime, $fdisqus, $fwysiwyg, $fwatched, $ftype, $flocked, $farticleid, $ipfshash, $fprivate, $fprivtoken, $ftemplatename) or loggit(2, "MySql error: " . $dbh->error);
+    }
+
+
+    $files = array();
+    $count = 0;
+    while ($sql->fetch()) {
+        $files[$count] = array(
+            'id' => $fid,
+            'title' => $ftitle,
+            'url' => $furl,
+            'time' => $ftime,
+            'disqus' => $fdisqus,
+            'wysiwyg' => $fwysiwyg,
+            'watched' => $fwatched,
+            'type' => $ftype,
+            'locked' => $flocked,
+            'articleid' => $farticleid,
+            'ipfshash' => $ipfshash,
+            'private' => $fprivate,
+            'privtoken' => $fprivtoken,
+            'templatename' => $ftemplatename
+        );
+        if ($blob) {
+            $files[$count]['content'] = $foutline;
+        }
+        $count++;
+    }
+
+    $sql->close() or loggit(2, "MySql error: " . $dbh->error);
+
+    loggit(1, "Returning: [$count] files for user: [$uid]");
+    return ($files[0]);
+}
+
+
+//Return a file by its private token
+function get_recent_file_by_privtoken($privtoken = NULL, $blob = FALSE)
+{
+    //Check parameters
+    if (empty($privtoken)) {
+        loggit(2, "The private token value given is corrupt or blank: [$privtoken]");
+        return (FALSE);
+    }
+
+    //Includes
+    include get_cfg_var("cartulary_conf") . '/includes/env.php';
+
+    //Connect to the database server
+    $dbh = new mysqli($dbhost, $dbuser, $dbpass, $dbname) or loggit(2, "MySql error: " . $dbh->error);
+
+    //Do the query
+    if ($blob) {
+        $sqltxt = "SELECT id, userid, title, url, time, disqus, wysiwyg, watched, type, locked, articleid, ipfshash, private, privtoken, templatename, outline FROM $table_recentfiles WHERE privtoken=?";
+    } else {
+        $sqltxt = "SELECT id, userid, title, url, time, disqus, wysiwyg, watched, type, locked, articleid, ipfshash, private, privtoken, templatename FROM $table_recentfiles WHERE privtoken=?";
+    }
+
+
+    loggit(1, "[$sqltxt]");
+    $sql = $dbh->prepare($sqltxt) or loggit(2, "MySql error: " . $dbh->error);
+    $sql->bind_param("s", $privtoken) or loggit(2, "MySql error: " . $dbh->error);
+    $sql->execute() or loggit(2, "MySql error: " . $dbh->error);
+    $sql->store_result() or loggit(2, "MySql error: " . $dbh->error);
+
+    //See if there were any files returned
+    if ($sql->num_rows() < 1) {
+        $sql->close()
+        or loggit(2, "MySql error: " . $dbh->error);
+        loggit(1, "No files returned for: [$privtoken] with the given criteria.");
+        return (array());
+    }
+
+    if ($blob) {
+        $sql->bind_result($fid, $fuid, $ftitle, $furl, $ftime, $fdisqus, $fwysiwyg, $fwatched, $ftype, $flocked, $farticleid, $ipfshash, $fprivate, $fprivtoken, $ftemplatename, $foutline) or loggit(2, "MySql error: " . $dbh->error);
+    } else {
+        $sql->bind_result($fid, $fuid, $ftitle, $furl, $ftime, $fdisqus, $fwysiwyg, $fwatched, $ftype, $flocked, $farticleid, $ipfshash, $fprivate, $fprivtoken, $ftemplatename) or loggit(2, "MySql error: " . $dbh->error);
+    }
+
+
+    $files = array();
+    $count = 0;
+    while ($sql->fetch()) {
+        $files[$count] = array(
+            'id' => $fid,
+            'uid' => $fuid,
+            'title' => $ftitle,
+            'url' => $furl,
+            'time' => $ftime,
+            'disqus' => $fdisqus,
+            'wysiwyg' => $fwysiwyg,
+            'watched' => $fwatched,
+            'type' => $ftype,
+            'locked' => $flocked,
+            'articleid' => $farticleid,
+            'ipfshash' => $ipfshash,
+            'private' => $fprivate,
+            'privtoken' => $fprivtoken,
+            'templatename' => $ftemplatename
+        );
+        if ($blob) {
+            $files[$count]['content'] = $foutline;
+        }
+        $count++;
+    }
+
+    $sql->close() or loggit(2, "MySql error: " . $dbh->error);
+
+    loggit(1, "Returning: [$count] files for private token: [$privtoken]");
+    return ($files[0]);
+}
+
+
+//Return a list of file versions recently edited by this user in the editor
+function get_recent_file_versions_by_url($uid = NULL, $url = NULL, $blob = FALSE)
+{
+    //Check parameters
+    if (empty($uid)) {
+        loggit(2, "The user id given is corrupt or blank: [$uid]");
+        return (FALSE);
+    }
+    if (empty($url)) {
+        loggit(2, "The url given is corrupt or blank: [$url]");
+        return (FALSE);
+    }
+
+    //Includes
+    include get_cfg_var("cartulary_conf") . '/includes/env.php';
+
+    //Connect to the database server
+    $dbh = new mysqli($dbhost, $dbuser, $dbpass, $dbname) or loggit(2, "MySql error: " . $dbh->error);
+
+    //Do the query
+    if ($blob) {
+        $sqltxt = "SELECT id, title, url, time, disqus, wysiwyg, watched, type, locked, ipfshash, private, privtoken, templatename, outline, CHAR_LENGTH(outline) 
+                   FROM $table_recentfilesversions 
+                   WHERE userid=? AND url=?
+                   ORDER BY time DESC";
+    } else {
+        $sqltxt = "SELECT id, title, url, time, disqus, wysiwyg, watched, type, locked, ipfshash, private, privtoken, templatename, CHAR_LENGTH(outline)
+                   FROM $table_recentfilesversions 
+                   WHERE userid=? AND url=?
+                   ORDER BY time DESC";
+    }
+
+
+    loggit(1, "[$sqltxt]");
+    $sql = $dbh->prepare($sqltxt) or loggit(2, "MySql error: " . $dbh->error);
+    $sql->bind_param("ss", $uid, $url) or loggit(2, "MySql error: " . $dbh->error);
+    $sql->execute() or loggit(2, "MySql error: " . $dbh->error);
+    $sql->store_result() or loggit(2, "MySql error: " . $dbh->error);
+
+    //See if there were any files for this user
+    if ($sql->num_rows() < 1) {
+        $sql->close()
+        or loggit(2, "MySql error: " . $dbh->error);
+        loggit(1, "No files returned for: [$uid | $url] with the given criteria.");
+        return (array());
+    }
+
+    if ($blob) {
+        $sql->bind_result($fid, $ftitle, $furl, $ftime, $fdisqus, $fwysiwyg, $fwatched, $ftype, $flocked, $ipfshash, $fprivate, $fprivtoken, $ftemplatename, $foutline, $fsize) or loggit(2, "MySql error: " . $dbh->error);
+    } else {
+        $sql->bind_result($fid, $ftitle, $furl, $ftime, $fdisqus, $fwysiwyg, $fwatched, $ftype, $flocked, $ipfshash, $fprivate, $fprivtoken, $ftemplatename, $fsize) or loggit(2, "MySql error: " . $dbh->error);
+    }
+
+
+    $files = array();
+    $count = 0;
+    while ($sql->fetch()) {
+        $files[$count] = array('id' => $fid,
+            'title' => $ftitle,
+            'url' => $furl,
+            'time' => $ftime,
+            'disqus' => $fdisqus,
+            'wysiwyg' => $fwysiwyg,
+            'watched' => $fwatched,
+            'type' => $ftype,
+            'locked' => $flocked,
+            'ipfshash' => $ipfshash,
+            'size' => $fsize,
+            'private' => $fprivate,
+            'privtoken' => $fprivtoken,
+            'templatename' => $ftemplatename
+        );
+        if ($blob) {
             $files[$count]['content'] = $foutline;
         }
         $count++;
@@ -2946,8 +3464,82 @@ function get_recent_file_by_url($uid = NULL, $url = NULL, $blob = FALSE)
 }
 
 
+//Get a certain version of an outline based on a url and a version id
+function get_recent_file_version_by_url($uid = NULL, $url = NULL, $vid = NULL)
+{
+    //Check parameters
+    if (empty($uid)) {
+        loggit(2, "The user id given is corrupt or blank: [$uid]");
+        return (FALSE);
+    }
+    if (empty($url)) {
+        loggit(2, "The url given is corrupt or blank: [$url]");
+        return (FALSE);
+    }
+    if (empty($vid)) {
+        loggit(2, "The version id given is corrupt or blank: [$vid]");
+        return (FALSE);
+    }
+
+
+    //Includes
+    include get_cfg_var("cartulary_conf") . '/includes/env.php';
+
+    //Connect to the database server
+    $dbh = new mysqli($dbhost, $dbuser, $dbpass, $dbname) or loggit(2, "MySql error: " . $dbh->error);
+
+    //Do the query
+    $sqltxt = "SELECT id, title, url, time, disqus, wysiwyg, watched, type, locked, ipfshash, private, privtoken, templatename, outline 
+               FROM $table_recentfilesversions 
+               WHERE userid=? AND url=? AND id=?
+               ORDER BY time DESC";
+
+    loggit(1, "[$sqltxt]");
+    $sql = $dbh->prepare($sqltxt) or loggit(2, "MySql error: " . $dbh->error);
+    $sql->bind_param("ssd", $uid, $url, $vid) or loggit(2, "MySql error: " . $dbh->error);
+    $sql->execute() or loggit(2, "MySql error: " . $dbh->error);
+    $sql->store_result() or loggit(2, "MySql error: " . $dbh->error);
+
+    //See if there were any files for this user
+    if ($sql->num_rows() < 1) {
+        $sql->close()
+        or loggit(2, "MySql error: " . $dbh->error);
+        loggit(1, "No files returned for: [$uid | $url] with the given criteria.");
+        return (array());
+    }
+
+    $sql->bind_result($fid, $ftitle, $furl, $ftime, $fdisqus, $fwysiwyg, $fwatched, $ftype, $flocked, $ipfshash, $fprivate, $fprivtoken, $ftemplatename, $foutline) or loggit(2, "MySql error: " . $dbh->error);
+
+    $files = array();
+    $count = 0;
+    while ($sql->fetch()) {
+        $files[$count] = array('id' => $fid,
+            'title' => $ftitle,
+            'url' => $furl,
+            'time' => $ftime,
+            'disqus' => $fdisqus,
+            'wysiwyg' => $fwysiwyg,
+            'watched' => $fwatched,
+            'type' => $ftype,
+            'locked' => $flocked,
+            'ipfshash' => $ipfshash,
+            'private' => $fprivate,
+            'privtoken' => $fprivtoken,
+            'templatename' => $ftemplatename
+        );
+        $files[$count]['content'] = $foutline;
+        $count++;
+    }
+
+    $sql->close() or loggit(2, "MySql error: " . $dbh->error);
+
+    loggit(1, "Returning: [$count] files for user: [$uid]");
+    return ($files[0]);
+}
+
+
 //Update a file into the recent files table
-function update_recent_file($uid = NULL, $url = NULL, $title = NULL, $outline = "", $oldurl = "", $disqus = FALSE, $wysiwyg = FALSE, $watched = FALSE, $articleid = NULL, $locked = FALSE)
+function update_recent_file($uid = NULL, $url = NULL, $title = NULL, $outline = "", $type = 0, $oldurl = "", $disqus = FALSE, $wysiwyg = FALSE, $watched = FALSE, $articleid = NULL, $locked = FALSE, $ipfshash = "", $private = FALSE, $privtoken = "", $templatename = "")
 {
     //Check parameters
     if (empty($uid)) {
@@ -2959,7 +3551,7 @@ function update_recent_file($uid = NULL, $url = NULL, $title = NULL, $outline = 
         return (FALSE);
     }
     if (empty($title)) {
-        $title = "Edited at - ".time();
+        $title = "Edited at - " . time();
         loggit(1, "No title for file, so generating one: [$title]");
     }
     if (!$disqus) {
@@ -2982,6 +3574,19 @@ function update_recent_file($uid = NULL, $url = NULL, $title = NULL, $outline = 
     } else {
         $locked = 1;
     }
+    if (empty($ipfshash)) {
+        $ipfshash = "";
+    }
+    if (!$private) {
+        $private = 0;
+    } else {
+        $private = 1;
+        if(empty($privtoken)) {
+            loggit(2, "Private was enabled but no token given: [$privtoken]");
+            return (FALSE);
+        }
+    }
+
 
     //Timestamp
     $time = time();
@@ -2993,18 +3598,345 @@ function update_recent_file($uid = NULL, $url = NULL, $title = NULL, $outline = 
     $dbh = new mysqli($dbhost, $dbuser, $dbpass, $dbname) or loggit(2, "MySql error: " . $dbh->error);
 
     //Insert recent file entry
-    if( empty($oldurl) ) {
-        $stmt = "INSERT INTO $table_recentfiles (userid, url, title, outline, time, disqus, wysiwyg, watched, articleid, locked) VALUES (?,?,?,?,?,?,?,?,?,?)
-                 ON DUPLICATE KEY UPDATE title=?, time=?, outline=?, disqus=?, wysiwyg=?, watched=?, articleid=?, locked=?";
+    if (empty($oldurl)) {
+        $stmt = "INSERT INTO $table_recentfiles (userid, url, title, outline, time, disqus, wysiwyg, watched, articleid, locked, type, ipfshash, private, privtoken, templatename)
+                                         VALUES (     ?,   ?,     ?,       ?,    ?,      ?,       ?,       ?,         ?,      ?,    ?,        ?,       ?,         ?,            ?)
+                 ON DUPLICATE KEY UPDATE title=?, time=?, outline=?, disqus=?, wysiwyg=?, watched=?, articleid=?, locked=?, ipfshash=?, private=?, privtoken=?, templatename=?";
         $sql = $dbh->prepare($stmt) or loggit(2, "MySql error: " . $dbh->error);
-        $sql->bind_param("ssssddddsdsdsdddsd", $uid, $url, $title, $outline, $time, $disqus, $wysiwyg, $watched, $articleid, $locked, $title, $time, $outline, $disqus, $wysiwyg, $watched, $articleid, $locked) or loggit(2, "MySql error: " . $dbh->error);
+        $sql->bind_param("ssssddddsddsdsssdsdddsdsdss",
+            $uid,
+            $url,
+            $title,
+            $outline,
+            $time,
+            $disqus,
+            $wysiwyg,
+            $watched,
+            $articleid,
+            $locked,
+            $type,
+            $ipfshash,
+            $private,
+            $privtoken,
+            $templatename,
+            $title,
+            $time,
+            $outline,
+            $disqus,
+            $wysiwyg,
+            $watched,
+            $articleid,
+            $locked,
+            $ipfshash,
+            $private,
+            $privtoken,
+            $templatename
+        ) or loggit(2, "MySql error: " . $dbh->error);
     } else {
-        $stmt = "INSERT INTO $table_recentfiles (userid, url, title, outline, time, disqus, wysiwyg, watched, articleid, locked) VALUES (?,?,?,?,?,?,?,?,?,?)
-                 ON DUPLICATE KEY UPDATE title=?, time=?, outline=?, url=?, disqus=?, wysiwyg=?, watched=?, articleid=?, locked=?";
+        $stmt = "INSERT INTO $table_recentfiles (userid, url, title, outline, time, disqus, wysiwyg, watched, articleid, locked, type, ipfshash, private, privtoken, templatename)
+                                         VALUES (     ?,   ?,     ?,       ?,    ?,      ?,       ?,       ?,         ?,      ?,    ?,        ?,       ?,         ?,            ?)
+                 ON DUPLICATE KEY UPDATE title=?, time=?, outline=?, url=?, disqus=?, wysiwyg=?, watched=?, articleid=?, locked=?, ipfshash=?, private=?, privtoken=?, templatename=?";
         $sql = $dbh->prepare($stmt) or loggit(2, "MySql error: " . $dbh->error);
-        $sql->bind_param("ssssddddsdsdssdddsd", $uid, $oldurl, $title, $outline, $time, $disqus, $wysiwyg, $watched, $articleid, $locked, $title, $time, $outline, $url, $disqus, $wysiwyg, $watched, $articleid, $locked) or loggit(2, "MySql error: " . $dbh->error);
+        $sql->bind_param("ssssddddsddsdsssdssdddsdsdss",
+            $uid,
+            $oldurl,
+            $title,
+            $outline,
+            $time,
+            $disqus,
+            $wysiwyg,
+            $watched,
+            $articleid,
+            $locked,
+            $type,
+            $ipfshash,
+            $private,
+            $privtoken,
+            $templatename,
+            $title,
+            $time,
+            $outline,
+            $url,
+            $disqus,
+            $wysiwyg,
+            $watched,
+            $articleid,
+            $locked,
+            $ipfshash,
+            $private,
+            $privtoken,
+            $templatename
+        ) or loggit(2, "MySql error: " . $dbh->error);
         loggit(3, "User: [$uid] changed old url: [$oldurl] to new url: [$url].");
     }
+    $sql->execute() or loggit(2, "MySql error: " . $dbh->error);
+    $rid = $sql->insert_id;
+    $sql->close() or loggit(2, "MySql error: " . $dbh->error);
+
+    //Log and return
+    loggit(3, "User: [$uid] edited a file: [$title] at: [$url]. Article: [$articleid]. Template name: [$templatename]");
+    return ($rid);
+}
+
+
+//Update only a file's content in the database using the url of the file as the identifier
+function update_recent_file_content_by_url($url = NULL, $outline = "")
+{
+    //Check parameters
+    if (empty($url)) {
+        loggit(2, "The url is blank or corrupt: [$url]");
+        return (FALSE);
+    }
+
+
+    //Includes
+    include get_cfg_var("cartulary_conf") . '/includes/env.php';
+
+    //Connect to the database server
+    $dbh = new mysqli($dbhost, $dbuser, $dbpass, $dbname) or loggit(2, "MySql error: " . $dbh->error);
+
+    //Insert recent file entry
+    $stmt = "UPDATE $table_recentfiles SET outline=? WHERE url=?";
+    $sql = $dbh->prepare($stmt) or loggit(2, "MySql error: " . $dbh->error);
+    $sql->bind_param("ss",$outline, $url) or loggit(2, "MySql error: " . $dbh->error);
+
+    $sql->execute() or loggit(2, "MySql error: " . $dbh->error);
+    $sql->close() or loggit(2, "MySql error: " . $dbh->error);
+
+    //Log and return
+    loggit(3, "Changed file outline content url: [$url].");
+    return ($rid);
+}
+
+
+//Update the timestamp of a recent file
+function touch_recent_file_by_id($uid = NULL, $fid = NULL)
+{
+    //Check parameters
+    if (empty($uid)) {
+        loggit(2, "The user id is blank or corrupt: [$uid]");
+        return (FALSE);
+    }
+    if (empty($fid)) {
+        loggit(2, "The file id is blank or corrupt: [$fid]");
+        return (FALSE);
+    }
+
+
+    //Timestamp
+    $time = time();
+
+    //Includes
+    include get_cfg_var("cartulary_conf") . '/includes/env.php';
+
+    //Connect to the database server
+    $dbh = new mysqli($dbhost, $dbuser, $dbpass, $dbname) or loggit(2, "MySql error: " . $dbh->error);
+
+    //Update the timestamp
+    $stmt = "UPDATE $table_recentfiles SET time=? WHERE id=? and userid=?";
+    $sql = $dbh->prepare($stmt) or loggit(2, "MySql error: " . $dbh->error);
+    $sql->bind_param("dds",
+        $time,
+        $fid,
+        $userid
+    ) or loggit(2, "MySql error: " . $dbh->error);
+    $sql->execute() or loggit(2, "MySql error: " . $dbh->error);
+    $sql->close() or loggit(2, "MySql error: " . $dbh->error);
+
+    //Log and return
+    loggit(3, "File: [$fid] was touched at: [$time]");
+    return (TRUE);
+}
+
+
+//Update a variable value for a recent file
+function update_recent_file_variable($uid = NULL, $fid = NULL, $varname = NULL, $varvalue = NULL, $increment = FALSE)
+{
+    //Check parameters
+    if (empty($uid)) {
+        loggit(2, "The user id is blank or corrupt: [$uid]");
+        return (FALSE);
+    }
+    if (empty($fid)) {
+        loggit(2, "The file id is blank or corrupt: [$fid]");
+        return (FALSE);
+    }
+    if (empty($varname)) {
+        loggit(2, "The variable name is blank or corrupt: [$varname]");
+        return (FALSE);
+    }
+    if (empty($varvalue)) {
+        loggit(2, "The variable value is blank or corrupt: [$varvalue]");
+        return (FALSE);
+    }
+    if ($increment === TRUE) {
+        $increment = 1;
+    } else {
+        $increment = 0;
+    }
+
+    //Check if this file belongs to this user id and balk if not
+    if(empty(get_recent_file_by_id($uid, $fid))) {
+        //Log and return
+        loggit(3, "User: [$uid] is not the owner of file: [$fid] so variables cannot be saved for it.");
+        return (FALSE);
+    }
+
+    //Timestamp
+    $time = time();
+
+    //Includes
+    include get_cfg_var("cartulary_conf") . '/includes/env.php';
+
+    //Connect to the database server
+    $dbh = new mysqli($dbhost, $dbuser, $dbpass, $dbname) or loggit(2, "MySql error: " . $dbh->error);
+
+    //Insert variable value
+    $stmt = "INSERT INTO $table_recentfilesvariables (id, variable, value, increment)
+                                               VALUES ( ?,        ?,     ?,         ?)
+                                             ON DUPLICATE KEY UPDATE value=?, increment=?";
+    $sql = $dbh->prepare($stmt) or loggit(2, "MySql error: " . $dbh->error);
+    $sql->bind_param("dssdsd",
+        $fid,
+        $varname,
+            $varvalue,
+            $increment,
+            $varvalue,
+            $increment
+    ) or loggit(2, "MySql error: " . $dbh->error);
+    $sql->execute() or loggit(2, "MySql error: " . $dbh->error);
+    $sql->close() or loggit(2, "MySql error: " . $dbh->error);
+
+    //Log and return
+    loggit(3, "Updated a variable: [$varname] for user: [$uid] for recent file: [$fid].");
+    return (TRUE);
+}
+
+
+//Get all the variable for a recent file
+function get_recent_file_variables($uid = NULL, $fid = NULL)
+{
+    //Check parameters
+    if (empty($uid)) {
+        loggit(2, "The user id given is corrupt or blank: [$uid]");
+        return (FALSE);
+    }
+    if (empty($fid)) {
+        loggit(2, "The file id given is corrupt or blank: [$fid]");
+        return (FALSE);
+    }
+
+
+    //Includes
+    include get_cfg_var("cartulary_conf") . '/includes/env.php';
+
+    //Connect to the database server
+    $dbh = new mysqli($dbhost, $dbuser, $dbpass, $dbname) or loggit(2, "MySql error: " . $dbh->error);
+
+    //Do the query
+    $sqltxt = "SELECT variable, value, increment FROM $table_recentfilesvariables WHERE id=?";
+
+    loggit(1, "[$sqltxt]");
+    $sql = $dbh->prepare($sqltxt) or loggit(2, "MySql error: " . $dbh->error);
+    $sql->bind_param("d", $fid) or loggit(2, "MySql error: " . $dbh->error);
+    $sql->execute() or loggit(2, "MySql error: " . $dbh->error);
+    $sql->store_result() or loggit(2, "MySql error: " . $dbh->error);
+
+    //Check for return conditions
+    if ($sql->num_rows() < 1) {
+        $sql->close()
+        or loggit(2, "MySql error: " . $dbh->error);
+        loggit(1, "No variables returned for file: [$fid].");
+        return (array());
+    }
+
+    $sql->bind_result($fvariable, $fvalue, $fincrement) or loggit(2, "MySql error: " . $dbh->error);
+
+    $variables = array();
+    $count = 0;
+    while ($sql->fetch()) {
+        $variables[$count] = array(
+            'id' => $fid,
+            'name' => $fvariable,
+            'value' => $fvalue,
+            'increment' => $fincrement
+        );
+        $count++;
+    }
+
+    $sql->close() or loggit(2, "MySql error: " . $dbh->error);
+
+    loggit(1, "Returning: [$count] variables for file: [$fid].");
+    return ($variables);
+}
+
+
+//Add a version history entry for an editor file
+function add_recent_file_version($uid = NULL, $url = NULL, $title = NULL, $outline = "", $type = 0, $disqus = FALSE, $wysiwyg = FALSE, $watched = FALSE, $articleid = NULL, $locked = FALSE, $ipfshash = "", $private = FALSE, $privtoken = "", $templatename = "")
+{
+    //Check parameters
+    if (empty($uid)) {
+        loggit(2, "The user id is blank or corrupt: [$uid]");
+        return (FALSE);
+    }
+    if (empty($url)) {
+        loggit(2, "The url is blank or corrupt: [$url]");
+        return (FALSE);
+    }
+    if (empty($title)) {
+        $title = "Edited at - " . time();
+        loggit(1, "No title for file, so generating one: [$title]");
+    }
+    if (!$disqus) {
+        $disqus = 0;
+    } else {
+        $disqus = 1;
+    }
+    if (!$wysiwyg) {
+        $wysiwyg = 0;
+    } else {
+        $wysiwyg = 1;
+    }
+    if (!$watched) {
+        $watched = 0;
+    } else {
+        $watched = 1;
+    }
+    if (!$locked) {
+        $locked = 0;
+    } else {
+        $locked = 1;
+    }
+    if (empty($ipfshash)) {
+        $ipfshash = "";
+    }
+    if (!$private) {
+        $private = 0;
+    } else {
+        $private = 1;
+        if(empty($privtoken)) {
+            loggit(2, "Private was enabled but no token given: [$privtoken]");
+            return (FALSE);
+        }
+    }
+
+
+    //Timestamp
+    $time = time();
+
+    //Includes
+    include get_cfg_var("cartulary_conf") . '/includes/env.php';
+
+    //Connect to the database server
+    $dbh = new mysqli($dbhost, $dbuser, $dbpass, $dbname) or loggit(2, "MySql error: " . $dbh->error);
+
+    //Insert recent file entry
+    $stmt = "INSERT INTO $table_recentfilesversions (userid, url, title, outline, time, disqus, wysiwyg, watched, articleid, locked, type, ipfshash, private, privtoken, templatename)
+                                             VALUES (     ?,   ?,     ?,       ?,    ?,      ?,       ?,       ?,         ?,      ?,    ?,        ?,       ?,         ?,            ?)";
+    $sql = $dbh->prepare($stmt) or loggit(2, "MySql error: " . $dbh->error);
+    $sql->bind_param("ssssddddsddsdss", $uid, $url, $title, $outline, $time, $disqus, $wysiwyg, $watched, $articleid, $locked, $type, $ipfshash, $private, $privtoken, $templatename)
+           or loggit(2, "MySql error: " . $dbh->error);
+
     $sql->execute() or loggit(2, "MySql error: " . $dbh->error);
     $rid = $sql->insert_id;
     $sql->close() or loggit(2, "MySql error: " . $dbh->error);
@@ -3016,7 +3948,7 @@ function update_recent_file($uid = NULL, $url = NULL, $title = NULL, $outline = 
 
 
 //Search for editor files that match query
-function search_editor_files($uid = NULL, $query = NULL, $max = NULL)
+function search_editor_files($uid = NULL, $query = NULL, $max = NULL, $withopml = FALSE)
 {
     //Check parameters
     if ($uid == NULL) {
@@ -3044,7 +3976,7 @@ function search_editor_files($uid = NULL, $query = NULL, $max = NULL)
     $dbh = new mysqli($dbhost, $dbuser, $dbpass, $dbname) or loggit(2, "MySql error: " . $dbh->error);
 
     //Do the query
-    $sqltxt = "SELECT url, title, outline
+    $sqltxt = "SELECT url, title, outline, time, type
 	           FROM $table_recentfiles
 	           WHERE userid=?
     ";
@@ -3062,11 +3994,12 @@ function search_editor_files($uid = NULL, $query = NULL, $max = NULL)
 
     //Adjust bindings
     $newsetup = "s" . $qsql['bind'][0];
-    $qsql['bind'][0] = & $newsetup;
+    $qsql['bind'][0] = &$newsetup;
     array_splice($qsql['bind'], 1, 0, array(&$uid));
 
     $ref = new ReflectionClass('mysqli_stmt');
     $method = $ref->getMethod("bind_param");
+    loggit(3, "DEBUG: ".print_r($qsql, TRUE));
     $method->invokeArgs($sql, $qsql['bind']);
 
     $sql->execute() or loggit(2, "MySql error: " . $dbh->error);
@@ -3080,19 +4013,153 @@ function search_editor_files($uid = NULL, $query = NULL, $max = NULL)
         return (FALSE);
     }
 
-    $sql->bind_result($furl, $ftitle, $foutline) or loggit(2, "MySql error: " . $dbh->error);
+    $sql->bind_result($furl, $ftitle, $foutline, $ftime, $ftype) or loggit(2, "MySql error: " . $dbh->error);
 
     $files = array();
     $count = 0;
     while ($sql->fetch()) {
-        $files[$count] = array('url' => $furl, 'title' => $ftitle, 'outline' => $foutline);
+        $files[$count] = array('url' => $furl, 'title' => $ftitle, 'outline' => $foutline, 'time' => $ftime, 'type' => $ftype);
         $count++;
     }
 
     $sql->close() or loggit(2, "MySql error: " . $dbh->error);
 
+    if($withopml) {
+        $s3url = build_opml_editor_feed($uid, $max, FALSE, $files, FALSE, "search/editorsearch", TRUE, "Editor search results: [".$query['flat']."]");
+        loggit(3, "OPMLURL: $s3url");
+        if(is_string($s3url)) {
+            $files['opmlurl'] = $s3url;
+            loggit(3, "OPMLURL: ".$files['opmlurl']);
+        }
+    }
+
     loggit(3, "Returning: [$count] editor files for user: [$uid]");
     return ($files);
+}
+
+
+//Build an opml outline containing the requested editor files
+function build_opml_editor_feed($uid = NULL, $max = NULL, $archive = FALSE, $files = NULL, $nos3 = FALSE, $s3filename = NULL, $returns3url = FALSE, $giventitle = NULL)
+{
+    //Check parameters
+    if ($uid == NULL) {
+        loggit(2, "The user id is blank or corrupt: [$uid]");
+        return (FALSE);
+    }
+
+    //Includes
+    include get_cfg_var("cartulary_conf") . '/includes/env.php';
+    require_once "$confroot/$libraries/s3/S3.php";
+
+    //Get some essentials
+    $username = get_user_name_from_uid($uid);
+    $prefs = get_user_prefs($uid);
+
+    //Lets set a sane limit for feed size
+    if ($max == NULL) {
+        if (!empty($prefs['maxlist'])) {
+            $max = $prefs['maxlist'];
+        } else {
+            loggit(1, "No max given. Setting to default of: [$default_max_opml_items].");
+            $max = $default_max_opml_items;
+        }
+    }
+
+    //Allow passing in a list of feeds as a param
+    if ($files == NULL || !is_array($files)) {
+        loggit(2, "The feed item list passed in was blank or corrupt.");
+        return (FALSE);
+    }
+
+    //Get the dates straight
+    $dateCreated = date("D, d M Y H:i:s O");
+    $dateModified = date("D, d M Y H:i:s O");
+
+    //Set the title
+    $outlinetitle = "Editor file list.";
+    if(!empty($giventitle)) {
+        $outlinetitle = $giventitle;
+    }
+
+    //The feed string
+    $opml = '<?xml version="1.0" encoding="ISO-8859-1"?>' . "\n";
+    $opml .= "<!-- OPML generated by " . $system_name . " v" . $version . " on " . date("D, d M Y H:i:s O") . " -->\n";
+    $opml .= '<opml version="2.0">' . "\n";
+
+    $opml .= "
+      <head>
+        <title>" . xmlentities($outlinetitle) . "</title>
+        <dateCreated>$dateCreated</dateCreated>
+        <dateModified>$dateModified</dateModified>
+        <ownerName>" . xmlentities(get_user_name_from_uid($uid)) . "</ownerName>
+        <ownerId>" . $uid . "</ownerId>
+        <expansionState></expansionState>
+        <expansionState></expansionState>
+        <vertScrollState>1</vertScrollState>
+        <windowTop>146</windowTop>
+        <windowLeft>107</windowLeft>
+        <windowBottom>468</windowBottom>
+        <windowRight>560</windowRight>
+      </head>\n";
+
+    $opml .= "
+      <body>";
+
+    foreach ($files as $file) {
+        $opml .= '
+              <outline type="include" url="'.htmlspecialchars($file['url']).'" text="'.xmlentities(trim(str_replace(array("\r", "\n", "\t", '&#13;'), '', $file['title']))).'" ';
+        if($file['type'] == 1) {
+            $opml .= 'icon="rss-square" ';
+        }
+        $opml .=' />';
+    }
+
+    $opml .= "      </body>
+  ";
+
+    $opml .= "</opml>";
+
+
+    //If this user has S3 storage enabled, then do it
+    $s3res = FALSE;
+    if ((s3_is_enabled($uid) || sys_s3_is_enabled()) && !$nos3) {
+        //First we get all the key info
+        $s3info = get_s3_info($uid);
+
+        //Get the feed file name
+        if(!empty($s3filename)) {
+            $filename = $s3filename.".".time().".opml";
+        } else {
+            $filename = "feeditemlisting".time().".opml";
+        }
+        $arcpath = '';
+
+        //Was this a request for a monthly archive?
+        if ($archive != FALSE) {
+            $arcpath = "/arc/" . date('Y') . "/" . date('m') . "/" . date('d');
+            //loggit(3, "Archive path: [".$arcpath."]");
+        }
+
+        //Put the file
+        $s3res = putInS3(gzencode($opml), $filename, $s3info['bucket'] . $arcpath, $s3info['key'], $s3info['secret'], array(
+            'Content-Type'      => 'text/xml',
+            'Content-Encoding'  => 'gzip'
+        ));
+        if (!$s3res) {
+            loggit(2, "Could not create S3 file: [$filename] for user: [$username].");
+            //loggit(3, "Could not create S3 file: [$filename] for user: [$username].");
+        } else {
+            $s3url = get_s3_url($uid, $arcpath, $filename);
+            loggit(3, "Wrote feed to S3 at url: [$s3url].");
+        }
+    }
+
+
+    loggit(3, "Built newsfeed item opml feed for user: [$username | $uid].");
+    if($returns3url && $s3res) {
+        return($s3url);
+    }
+    return ($opml);
 }
 
 
@@ -3380,46 +4447,46 @@ function diff_opml($opml1 = "", $opml2 = "")
     //Includes
     include get_cfg_var("cartulary_conf") . '/includes/env.php';
 
-    $diff = diff(explode("\n",$opml1),explode("\n",$opml2));
-    echo print_r($diff, TRUE)."\n";
+    $diff = diff(explode("\n", $opml1), explode("\n", $opml2));
+    echo print_r($diff, TRUE) . "\n";
     $changed = "";
 
     $bodygo = FALSE;
     foreach ($diff as $line) {
-        if( is_string($line) && trim($line) == "</body>") {
+        if (is_string($line) && trim($line) == "</body>") {
             $bodygo = FALSE;
         }
 
-        if( $bodygo && is_array($line) && isset($line['i'])) {
-            foreach( $line['i'] as $subline ) {
-                if( !empty($subline) ) {
-                    $changed .= trim($subline)."\n";
+        if ($bodygo && is_array($line) && isset($line['i'])) {
+            foreach ($line['i'] as $subline) {
+                if (!empty($subline)) {
+                    $changed .= trim($subline) . "\n";
                 }
             }
         }
 
-        if( is_string($line) && trim($line) == "<body>") {
+        if (is_string($line) && trim($line) == "<body>") {
             $bodygo = TRUE;
         }
     }
 
-    echo print_r("DEBUG [changed]: ".$changed, TRUE)."\n";
-    return($changed);
+    echo print_r("DEBUG [changed]: " . $changed, TRUE) . "\n";
+    return ($changed);
 }
 
 
 //Convert opml to a php multidimensional array
 function convert_opml_to_array($opml = "")
 {
-    if(empty($opml)) {
-        return(array());
+    if (empty($opml)) {
+        return (array());
     }
 
     $xml = simplexml_load_string($opml);
     $json = json_encode($xml);
-    $array = json_decode($json,TRUE);
+    $array = json_decode($json, TRUE);
 
-    return($array);
+    return ($array);
 }
 
 
@@ -3430,7 +4497,7 @@ function convert_opml_to_json($opml = "")
     $xml = simplexml_load_string($opml);
     $json = json_encode($xml);
 
-    return($json);
+    return ($json);
 }
 
 
@@ -3460,13 +4527,13 @@ function convert_opml_to_myword($content = NULL, $max = NULL)
     libxml_clear_errors();
 
     //Meta-data
-    if(isset($x->head->title)) {
+    if (isset($x->head->title)) {
         $converted['title'] = (string)$x->head->title;
     }
-    if(isset($x->head->ownerName)) {
+    if (isset($x->head->ownerName)) {
         $converted['authorname'] = (string)$x->head->ownerName;
     }
-    if(isset($x->head->dateModified)) {
+    if (isset($x->head->dateModified)) {
         $converted['when'] = (string)$x->head->dateModified;
     }
     $converted['img'] = "";
@@ -3490,18 +4557,18 @@ function convert_opml_to_myword($content = NULL, $max = NULL)
     //Run through each node and get the text into the array
     $count = 0;
     foreach ($nodes as $entry) {
-        if( (string)$entry->attributes()->type == "link") {
-            if( empty($entry->attributes()->text) ) {
-                $converted['subs'][] = '<a href="'.(string)$entry->attributes()->url.'">'.(string)$entry->attributes()->url.'</a>';
+        if ((string)$entry->attributes()->type == "link") {
+            if (empty($entry->attributes()->text)) {
+                $converted['subs'][] = '<a href="' . (string)$entry->attributes()->url . '">' . (string)$entry->attributes()->url . '</a>';
             } else {
-                $converted['subs'][] = '<a href="'.(string)$entry->attributes()->url.'">'.(string)$entry->attributes()->text.'</a>';
+                $converted['subs'][] = '<a href="' . (string)$entry->attributes()->url . '">' . (string)$entry->attributes()->text . '</a>';
             }
             $count++;
         } else
-        if( empty($entry->attributes()->type)) {
-            $converted['subs'][] = (string)$entry->attributes()->text;
-            $count++;
-        }
+            if (empty($entry->attributes()->type)) {
+                $converted['subs'][] = (string)$entry->attributes()->text;
+                $count++;
+            }
     }
 
     //loggit(3, "DEBUG: ".print_r($json, TRUE));
@@ -3514,4 +4581,551 @@ function convert_opml_to_myword($content = NULL, $max = NULL)
     //Log and leave
     loggit(3, "Got [$count] include nodes from the outline.");
     return (json_encode($converted));
+}
+
+
+//Convert a news feed to opml structure
+function convert_feed_to_opml($content = NULL, $max = NULL)
+{
+    //Includes
+    include get_cfg_var("cartulary_conf") . '/includes/env.php';
+
+    //Check params
+    if (empty($content) || !is_feed($content)) {
+        loggit(2, "The feed content is blank or corrupt: [$content]");
+        return (FALSE);
+    }
+
+    //Array for building
+    $converted = array();
+    $converted['title'] = "";
+    $converted['authorname'] = "";
+    $converted['when'] = "";
+    $converted['img'] = "";
+    $converted['subs'] = "";
+
+    //Parse it
+    libxml_use_internal_errors(true);
+    $x = simplexml_load_string($content, 'SimpleXMLElement', LIBXML_NOCDATA);
+    libxml_clear_errors();
+
+    //Meta-data
+    if (isset($x->head->title)) {
+        $converted['title'] = (string)$x->head->title;
+    }
+    if (isset($x->head->ownerName)) {
+        $converted['authorname'] = (string)$x->head->ownerName;
+    }
+    if (isset($x->head->dateModified)) {
+        $converted['when'] = (string)$x->head->dateModified;
+    }
+    $converted['img'] = "";
+
+    //Grab an image node
+    $nodes = $x->xpath('//outline[@url and @type="image"]');
+    if (!empty($nodes)) {
+        foreach ($nodes as $entry) {
+            $converted['img'] = (string)$entry->attributes()->url;
+            break;
+        }
+    }
+
+    //Grab outline nodes
+    $nodes = $x->xpath('//outline[not(ancestor-or-self::outline[@type="menu" or @type="collaborate"])]');
+    if (empty($nodes)) {
+        loggit(2, "This outline content didn't have any outline nodes.");
+        return (-2);
+    }
+
+    //Run through each node and get the text into the array
+    $count = 0;
+    foreach ($nodes as $entry) {
+        if ((string)$entry->attributes()->type == "link") {
+            if (empty($entry->attributes()->text)) {
+                $converted['subs'][] = '<a href="' . (string)$entry->attributes()->url . '">' . (string)$entry->attributes()->url . '</a>';
+            } else {
+                $converted['subs'][] = '<a href="' . (string)$entry->attributes()->url . '">' . (string)$entry->attributes()->text . '</a>';
+            }
+            $count++;
+        } else
+            if (empty($entry->attributes()->type)) {
+                $converted['subs'][] = (string)$entry->attributes()->text;
+                $count++;
+            }
+    }
+
+    //loggit(3, "DEBUG: ".print_r($json, TRUE));
+
+    if ($count == 0) {
+        loggit(2, "There were no outline nodes in this outline.");
+        return (-2);
+    }
+
+    //Log and leave
+    loggit(3, "Got [$count] include nodes from the outline.");
+    return (json_encode($converted));
+}
+
+
+//Convert opml to rss format
+function convert_opml_to_rss($content = NULL, $uid = NULL, $max = NULL)
+{
+    //Includes
+    include get_cfg_var("cartulary_conf") . '/includes/env.php';
+    include "$confroot/libraries/FreePod/Podcast.php";
+
+    //Check params
+    if (empty($content) || !is_outline($content)) {
+        loggit(3, "The outline content is blank or corrupt: Size[".strlen($content)."]");
+        return (FALSE);
+    }
+
+    //Array for building
+    $converted = array();
+    $converted['title'] = "";
+    $converted['description'] = "";
+    $converted['link'] = "";
+    $converted['authorname'] = "";
+    $converted['when'] = "";
+    $converted['pubdate'] = "";
+    $converted['img'] = "";
+    $converted['items'] = "";
+    $converted['explicit'] = FALSE;
+    $converted['keywords'] = array();
+    $converted['categories'] = array();
+
+    //Parse it
+    libxml_use_internal_errors(true);
+    $x = simplexml_load_string($content, 'SimpleXMLElement', LIBXML_NOCDATA);
+    libxml_clear_errors();
+
+    //Meta-data
+    if (isset($x->head->title)) {
+        $converted['title'] = (string)$x->head->title;
+    }
+    if (isset($x->head->ownerName)) {
+        $converted['authorname'] = (string)$x->head->ownerName;
+    }
+    if (isset($x->head->dateModified)) {
+        $converted['when'] = (string)$x->head->dateModified;
+    }
+
+    //Grab the first description node as the feed description
+    $nodes = $x->xpath('//outline[@type="description" and not(ancestor::outline[@type="item"])]');
+    if (!empty($nodes)) {
+        foreach ($nodes as $entry) {
+            $converted['description'] = (string)$entry->attributes()->text;
+            loggit(3, "RSS DEBUG: description");
+            break;
+        }
+    }
+
+    //Grab the first link node as the feed link
+    $nodes = $x->xpath('//outline[@type="link"]');
+    if (!empty($nodes)) {
+        foreach ($nodes as $entry) {
+            $converted['link'] = (string)$entry->attributes()->url;
+            loggit(3, "RSS DEBUG: link");
+            break;
+        }
+    }
+
+    //Grab the first image node as the feed image
+    $nodes = $x->xpath('//outline[@url and @type="image"]');
+    if (!empty($nodes)) {
+        foreach ($nodes as $entry) {
+            $converted['img'] = (string)$entry->attributes()->url;
+            break;
+        }
+    }
+
+    //Grab the channel author node if there is one
+    $nodes = $x->xpath('//outline[@type="author" and not(ancestor::outline[@type="item"])]');
+    if (!empty($nodes)) {
+        foreach ($nodes as $entry) {
+            $converted['author'] = (string)$entry->attributes()->text;
+            break;
+        }
+    }
+
+    //Grab the channel pubdate node if there is one
+    $nodes = $x->xpath('//outline[@type="pubdate" and not(ancestor::outline[@type="item"])]');
+    if (!empty($nodes)) {
+        foreach ($nodes as $entry) {
+            $converted['pubdate'] = (string)$entry->attributes()->text;
+            break;
+        }
+    }
+
+    //Grab the explicit tag if there is one
+    $nodes = $x->xpath('//outline[@type="explicit"]');
+    if (!empty($nodes)) {
+        foreach ($nodes as $entry) {
+            $explicit = (string)$entry->attributes()->text;
+            if (!empty($explicit) && stripos($explicit, "yes") !== FALSE) {
+                $converted['explicit'] = TRUE;
+            }
+            break;
+        }
+    }
+
+    //Grab the keywords
+    $nodes = $x->xpath('//outline[@type="keyword" and not(ancestor::outline[@type="item"])]');
+    if (!empty($nodes)) {
+        foreach ($nodes as $entry) {
+            $converted['keywords'][] = (string)$entry->attributes()->text;
+        }
+    }
+
+    //Grab the categories
+    $nodes = $x->xpath('//outline[@type="category" and not(ancestor::outline[@type="item"])]');
+    if (!empty($nodes)) {
+        foreach ($nodes as $entry) {
+            $converted['categories'][] = (string)$entry->attributes()->text;
+        }
+    }
+
+    //Grab outline nodes
+    $nodes = $x->xpath('//outline[@type="item"]');
+    if (empty($nodes)) {
+        loggit(3, "This outline content didn't have any rss item nodes.");
+        return (-2);
+    }
+
+    //Start the rss feed structure with what we have
+    $podcast = new Podcast($converted['title'], $converted['description'], $converted['link']);
+    $podcast->xml(TRUE);
+
+    //Add a webmaster and managingeditor if we have a uid
+    if (!empty($uid)) {
+        $email = get_email_from_uid($uid);
+        if (!empty($email)) {
+            $podcast->webMaster = $email;
+            $podcast->managingEditor = $email;
+            $podcast->itunes_owner['email'] = $email;
+        }
+        $name = get_user_name_from_uid($uid);
+        if (!empty($name)) {
+            $podcast->itunes_author = $name;
+            $podcast->itunes_owner['name'] = $name;
+        }
+        if (!empty($name) && !empty($email)) {
+            $podcast->webMaster = $email . " ($name)";
+            $podcast->managingEditor = $email . " ($name)";
+        }
+    }
+
+    //Author
+    if (!empty($converted['author'])) {
+        loggit(3, "Adding channel author: [" . $converted['author'] . "]");
+        $podcast->itunes_author = $converted['author'];
+    }
+
+    //pubDate
+    if (!empty($converted['pubdate'])) {
+        loggit(3, "Adding channel pubDate: [" . $converted['pubdate'] . "]");
+        $podcast->pubDate = $converted['pubdate'];
+    }
+
+    //Add the channel image
+    if (!empty($converted['img'])) {
+        loggit(3, "Adding channel image: [" . $converted['img'] . "]");
+        $podcast->itunes_image = $converted['img'];
+    }
+
+    //Add the explicit tag if it's true
+    if ($converted['explicit']) {
+        loggit(3, "Channel explicit tag: [Yes]");
+        $podcast->itunes_explicit = "Yes";
+    }
+
+    //Add the keywords
+    $keywords = "";
+    if (!empty($converted['keywords'])) {
+        loggit(3, "Adding keywords: [" . print_r($converted['keywords'], TRUE) . "]");
+        $podcast->itunes_keywords = $converted['keywords'];
+    }
+
+    //Add the categories
+    if (!empty($converted['categories'])) {
+        loggit(3, "Adding categories: [" . print_r($converted['categories'], TRUE) . "]");
+        foreach ($converted['categories'] as $cat) {
+            $podcast->addCategory($cat);
+        }
+    }
+
+    //Run through each node and get the text into the array
+    $count = 0;
+    $pcount = 0;
+    foreach ($nodes as $item) {
+        $pcount++;
+
+        $converted_urls = array();
+        $converted_texts = array();
+        $converted_nontypes = array();
+        $converted_images = array();
+        $converted_author = "";
+        $converted_pubdate = "";
+        $converted_enclosures = array();
+        $converted_explicits = FALSE;
+        $converted_keywords = array();
+        $converted_desc = "";
+        $converted_title = (string)$item->attributes()->text;
+        $converted_guid = NULL;
+        $converted_url = (string)$item->attributes()->url;
+        $converted_created = (string)$item->attributes()->created;
+
+        //Get all subnodes of the item and parse them for various content
+        $item_parts = $item->xpath('.//outline');
+        foreach ($item_parts as $part) {
+            $converted_url = "";
+            $converted_text = "";
+            $converted_nontype = "";
+            $converted_image = "";
+            $converted_enclosure = array();
+            $converted_explicit = FALSE;
+            $converted_keyword = "";
+
+            //Handle each link type
+            if ((string)$part->attributes()->type == "link") {
+                if (empty($part->attributes()->text)) {
+                    $converted_text = (string)$part->attributes()->url;
+                } else {
+                    $converted_text = (string)$part->attributes()->text;
+                }
+                $converted_url = (string)$part->attributes()->url;
+                if (stripos($converted_text, "http") === 0) {
+                    $converted_url = $converted_text;
+                }
+
+            } else if ((string)$part->attributes()->type == "description") {
+                $desc_parts = $part->xpath('.//outline');
+                foreach ($desc_parts as $dpart) {
+                    $converted_desc = $converted_desc . "<p>" . (string)$dpart->attributes()->text . "</p>\n";
+                }
+
+            } else if ((string)$part->attributes()->type == "title") {
+                $converted_title = (string)$part->attributes()->text;
+
+            } else if ((string)$part->attributes()->type == "author") {
+                $converted_author = (string)$part->attributes()->text;
+
+            } else if ((string)$part->attributes()->type == "pubdate") {
+                $converted_pubdate = (string)$part->attributes()->text;
+
+            } else if ((string)$part->attributes()->type == "guid") {
+                $converted_guid = trim((string)$part->attributes()->text);
+                if (empty($converted_guid)) {
+                    $converted_guid = random_gen(64);
+                }
+                loggit(3, "RSS: Guid value: " . $converted_guid);
+
+            } else if ((string)$part->attributes()->type == "keyword") {
+                $converted_keyword = (string)$part->attributes()->text;
+
+            } else if ((string)$part->attributes()->type == "explicit") {
+                //Grab the explicit tag if there is one
+                $exp = (string)$part->attributes()->text;
+                if (!empty($exp) && stripos($exp, "yes") !== FALSE) {
+                    $converted_explicit = TRUE;
+                }
+
+            } else if ((string)$part->attributes()->type == "enclosure") {
+                $converted_enclosure['txturl'] = (string)$part->attributes()->text;
+                $converted_enclosure['url'] = (string)$part->attributes()->url;
+                $converted_enclosure['type'] = (string)$part->attributes()->mimetype;
+                $converted_enclosure['length'] = (string)$part->attributes()->length;
+                if (stripos($converted_enclosure['txturl'], "http") === 0) {
+                    $converted_enclosure['url'] = $converted_enclosure['txturl'];
+                    $converted_enclosure['type'] = "";
+                    $converted_enclosure['length'] = "";
+                }
+
+            } else if ((string)$part->attributes()->type == "image") {
+                $converted_image = (string)$part->attributes()->url;
+                $converted_imgtxt = (string)$part->attributes()->text;
+                if (stripos($converted_imgtxt, "http") === 0) {
+                    $converted_image = $converted_imgtxt;
+                }
+
+            } else {
+                //Save non-typed nodes for use as description text if no description is found
+                $converted_nontype = (string)$part->attributes()->text;
+            }
+
+            if (!empty($converted_url)) $converted_urls[] = $converted_url;
+            if (!empty($converted_text)) $converted_texts[] = $converted_text;
+            if (!empty($converted_image)) $converted_images[] = $converted_image;
+            if (!empty($converted_enclosure)) $converted_enclosures[] = $converted_enclosure;
+            if (!empty($converted_keyword)) $converted_keywords[] = $converted_keyword;
+            if ($converted_explicit) $converted_explicits = TRUE;
+            if (!empty($converted_nontype)) $converted_nontypes[] = $converted_nontype;
+        }
+
+        //Trim strings
+        $converted_desc = trim($converted_desc);
+        $converted_title = trim($converted_title);
+        $converted_author = trim($converted_author);
+        $converted_pubdate = trim($converted_pubdate);
+
+        //Determine if a description was explicitely assigned as a "description" node. If
+        //not, use any non-typed nodes found as the description body.  If those are blank
+        //too, use a single blank space.
+        //loggit(3, "RSS DESCRIPTION: ".print_r($converted_desc, TRUE));
+        if (empty($converted_desc)) {
+            loggit(3, "RSS: No description nodes found.");
+            if (empty($converted_nontypes)) {
+                if (empty($converted_title)) {
+                    loggit(3, "RSS: Error. Both title and description are blank.");
+                    return (-4);
+                } else {
+                    loggit(3, "RSS: No non-types found to use as description.");
+                }
+            } else {
+                loggit(3, "RSS: Using non-types as description.");
+                $converted_desc = "<p>" . implode("</p><p>\n", $converted_nontypes) . "</p>";
+            }
+        }
+
+        //Now insert the item and it's attributes into the feed
+        //loggit(3, "RSS: Adding the item [$converted_title | $converted_desc].");
+        $pitem = $podcast->newItem($converted_title, $converted_desc, $converted_urls[0], $converted_guid);
+
+        //Itunes subtitle
+        $pitem->itunes_subtitle = $converted_title;
+
+        //Author
+        if (!empty($converted_author)) {
+            $pitem->author = $converted_author;
+        } else {
+            if(isset($converted['author'])) $pitem->author = $converted['author'];
+        }
+
+        //Pubdate check
+        if (!empty($converted_created)) {
+            $pitem->setValue("pubDate", $converted_created);
+        }
+        if (!empty($converted_pubdate)) {
+            $pitem->setValue("pubDate", $converted_pubdate);
+        }
+
+        //If this item's pubDate is newer use it for the channel pubDate
+        $thispubdate = strtotime($pitem->pubDate);
+        $chnlpubdate = strtotime($podcast->pubDate);
+        if (($thispubdate != FALSE) && ($thispubdate > $chnlpubdate || $pcount == 1)) {
+            $podcast->setValue("pubDate", $converted_created);
+            //loggit(3, "RSS DEBUG: Set channel pubdate to: [$converted_created].");
+        }
+
+        //Image check
+        if (!empty($converted_images[0])) {
+            $pitem->itunes_image = $converted_images[0];
+        }
+
+        //Enclosure check
+        if (!empty($converted_enclosures[0])) {
+            loggit(3, "RSS: Adding enclosure: [".$converted_enclosures[0]['url']."] to feed.");
+            $res = $pitem->addEnclosure($converted_enclosures[0]['url'], $converted_enclosures[0]['length'], $converted_enclosures[0]['type']);
+            if(!$res) {
+                loggit(3, "RSS: Enclosure: [".$converted_enclosures[0]['url']."] failed HEAD check with a bad http status code.");
+                return(-5);
+            }
+        }
+
+        //Explicit episode check
+        if ($converted_explicits != $converted['explicit']) {
+            if ($converted_explicits) {
+                $pitem->itunes_explicit = "Yes";
+            } else {
+                $pitem->itunes_explicit = "No";
+            }
+        }
+
+        //Keyword check
+        if (!empty($converted_keywords)) {
+            $pitem->itunes_keywords = $converted_keywords;
+        }
+
+
+    }
+
+    //Give an error code if there were no RSS items found
+    if ($pcount == 0) {
+        loggit(3, "There were zero rss item nodes processed for this outline.");
+        return (-2);
+    }
+
+    //Log and leave
+    loggit(3, "Got [$pcount] rss item nodes from the outline.");
+    try {
+        $xxp = $podcast->xml(TRUE);
+        //Put a blank line between items for easier reading
+        $xxp = str_replace('<item>', "\n    <item>", $xxp);
+    } catch (Exception $e) {
+        loggit(3, 'Caught exception: ' . $e->getMessage());
+        return (-3);
+    }
+
+    loggit(3, "DEBUG! RSS XML generated successfully.");
+    return ($xxp);
+}
+
+
+//Convert opml to source namespace
+function convert_opml_to_source_namespace($content = NULL, $title = NULL, $pretty = TRUE, $prepend = '') {
+    
+    //Includes
+    include get_cfg_var("cartulary_conf") . '/includes/env.php';
+
+    //Check params
+    if (empty($content)) {
+        loggit(2, "The feed content is blank or corrupt: [$content]");
+        return (FALSE);
+    }
+
+
+    $start = stripos($content, '<outline');
+    if($start !== FALSE) {
+        $content = substr($content, $start)."\n";
+    } else {
+        return(-1);
+    }
+
+    $end = stripos($content, '</body');
+    if($start !== FALSE && $end !== FALSE) {
+        $content = trim(substr($content, 0, $end))."\n";
+    } else {
+        return(-2);
+    }
+
+    $content = str_replace("<outline ", "<source:outline ", $content);
+    $content = str_replace("</outline>", "</source:outline>", $content);
+    $content = remove_non_tag_space($content);
+
+    //If pretty-print
+    $newcontent = "";
+    if($pretty) {
+        $content = str_replace("<source:outline", "\n<source:outline", $content);
+        $content = str_replace("</source:outline>", "\n</source:outline>", $content);
+
+        $space = "    ";
+        $indent = 0;
+        foreach( explode("\n", $content) as $line ) {
+
+            if($indent > 0 && stripos($line, "</source:outline") !== FALSE) {
+                $indent--;
+            }
+
+            $newcontent .= $prepend.str_repeat($space, $indent).$line."\n";
+
+            if(stripos($line, "<source:outline") !== FALSE && stripos($line, "/>") === FALSE) {
+                $indent++;
+            }
+        }
+    } else {
+        $newcontent = $prepend.$content;
+    }
+
+    loggit(1, "Converted opml content to source namespace.");
+    return($newcontent);
 }

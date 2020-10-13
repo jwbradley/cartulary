@@ -2052,7 +2052,7 @@ function get_user_prefs($uid = NULL, $noinit = FALSE)
 function get_user_time_last_active($uid = NULL)
 {
     //Check parameters
-    if ( empty($uid) ) {
+    if (empty($uid)) {
         loggit(2, "User id given is blank or corrupt: [$uid]");
         return (FALSE);
     }
@@ -2073,7 +2073,7 @@ function get_user_time_last_active($uid = NULL)
         $sql->close()
         or loggit(2, "MySql error: " . $dbh->error);
         loggit(1, "No active sessions for this user: [$uid].");
-        return(0);
+        return (0);
     }
     $session = $sql->fetch_assoc();
     $sql->close() or loggit(2, "MySql error: " . $dbh->error);
@@ -2203,11 +2203,26 @@ function set_user_prefs($uid = NULL, $prefs = NULL)
                   smtp_server=?,
                   smtp_secure=?,
                   smtp_port=?,
-                  payment_made=?
+                  payment_made=?,
+                  darkmode=?,
+                  mastodon_url=?,
+                  mastodon_app_token=?,
+                  mastodon_client_id=?,
+                  mastodon_client_secret=?,
+                  mastodon_access_token=?,
+                  carttoken=?,
+	              ipinfotracker=?,
+	              mastodon_filter_string=?,
+	              s3bucket_assets=?,
+                  s3key_assets=?,
+                  s3secret_assets=?,
+                  s3cname_assets=?,
+	              s3endpoint_assets=?,
+	              s3region_assets=?
            WHERE uid=?";
 
     $sql = $dbh->prepare($stmt) or loggit(2, "MySql error: " . $dbh->error);
-    $sql->bind_param("dddddssdssssssssssdsssdddssssdsdddddsdddddsddssdddsssdssssdsssdsds",
+    $sql->bind_param("dddddssdssssssssssdsssdddssssdsdddddsdddddsddssdddsssdssssdsssdsddssssssdssssssss",
         $prefs['publicdefault'],
         $prefs['publicrss'],
         $prefs['publicopml'],
@@ -2273,6 +2288,21 @@ function set_user_prefs($uid = NULL, $prefs = NULL)
         $prefs['smtp_secure'],
         $prefs['smtp_port'],
         $prefs['payment_made'],
+        $prefs['darkmode'],
+        $prefs['mastodon_url'],
+        $prefs['mastodon_app_token'],
+        $prefs['mastodon_client_id'],
+        $prefs['mastodon_client_secret'],
+        $prefs['mastodon_access_token'],
+        $prefs['carttoken'],
+        $prefs['ipinfotracker'],
+        $prefs['mastodon_filter_string'],
+        $prefs['s3bucket_assets'],
+        $prefs['s3key_assets'],
+        $prefs['s3secret_assets'],
+        $prefs['s3cname_assets'],
+        $prefs['s3endpoint_assets'],
+        $prefs['s3region_assets'],
         $uid
     ) or loggit(2, "MySql error: " . $dbh->error);
     $sql->execute() or loggit(2, "MySql error: " . $dbh->error);
@@ -2285,13 +2315,20 @@ function set_user_prefs($uid = NULL, $prefs = NULL)
 
 
 //Retrieve a list of all the users in the database
-function get_users($max = NULL)
+function get_users($max = NULL, $time = NULL, $activeonly = FALSE)
 {
     //Includes
     include get_cfg_var("cartulary_conf") . '/includes/env.php';
 
     //Connect to the database server
     $dbh = new mysqli($dbhost, $dbuser, $dbpass, $dbname) or loggit(2, "MySql error: " . $dbh->error);
+
+    //Only active users?
+    if($activeonly) {
+        $active = " WHERE $table_user.active = 1 ";
+    } else {
+        $active = "";
+    }
 
     //Look for the
     $sqltxt = "SELECT $table_user.id,
@@ -2303,9 +2340,16 @@ function get_users($max = NULL)
                     $table_user.badlogins,
                     $table_user.username,
                     $table_user.admin,
-                    $table_prefs.avatarurl
+                    $table_prefs.avatarurl,
+                    $table_prefs.carttoken,
+                    MAX($table_session.lastactivity),
+		            MAX($table_river.lastbuild)
              FROM $table_user
-	     LEFT JOIN $table_prefs ON $table_user.id = $table_prefs.uid
+	         LEFT JOIN $table_prefs ON $table_user.id = $table_prefs.uid
+             LEFT JOIN $table_session ON $table_user.id = $table_session.userid
+             LEFT JOIN $table_river ON $table_user.id = $table_river.userid
+             $active
+             GROUP BY $table_user.id
              ORDER BY $table_user.name DESC";
 
     if (!empty($max) && is_numeric($max)) {
@@ -2325,7 +2369,7 @@ function get_users($max = NULL)
         return (array());
     }
 
-    $sql->bind_result($uid, $uname, $uemail, $ulastlogin, $ustage, $uactive, $ubadlogins, $uusername, $uadmin, $uavatarurl) or loggit(2, "MySql error: " . $dbh->error);
+    $sql->bind_result($uid, $uname, $uemail, $ulastlogin, $ustage, $uactive, $ubadlogins, $uusername, $uadmin, $uavatarurl, $ucarttoken, $ulastactivity, $urlastbuild) or loggit(2, "MySql error: " . $dbh->error);
 
     $users = array();
     $count = 0;
@@ -2340,7 +2384,10 @@ function get_users($max = NULL)
             'username' => $uusername,
             'sopmlurl' => get_social_outline_url($uid),
             'avatarurl' => $uavatarurl,
-            'admin' => $uadmin);
+            'admin' => $uadmin,
+            'carttoken' => $ucarttoken,
+            'lastactive' => $ulastactivity,
+            'lastriverbuild' => $urlastbuild);
         $count++;
     }
 
@@ -2413,6 +2460,31 @@ function s3_is_enabled($uid = NULL)
 
     //Check credentials
     if (!empty($prefs['s3bucket']) && !empty($prefs['s3key']) && !empty($prefs['s3secret'])) {
+        return (TRUE);
+    }
+
+    //At least one pref was bad
+    return (FALSE);
+}
+
+
+//Return true or false if the user has valid S3 credentials for assets upload
+function s3_assets_is_enabled($uid = NULL)
+{
+    //Check parameters
+    if (empty($uid)) {
+        loggit(2, "User id given is blank or corrupt: [$uid]");
+        return (FALSE);
+    }
+
+    //Includes
+    include get_cfg_var("cartulary_conf") . '/includes/env.php';
+
+    //Get user prefs
+    $prefs = get_user_prefs($uid);
+
+    //Check credentials
+    if (!empty($prefs['s3bucket_assets']) && !empty($prefs['s3key_assets']) && !empty($prefs['s3secret_assets'])) {
         return (TRUE);
     }
 
@@ -2512,6 +2584,36 @@ function twitter_is_enabled($uid = NULL)
 
     //At least one pref was bad
     loggit(1, "Twitter is NOT enabled for user: [$uid].");
+    return (FALSE);
+}
+
+
+//Return true or false if the user has valid mastodon app registered and a token
+function mastodon_is_enabled($uid = NULL)
+{
+    //Check parameters
+    if (empty($uid)) {
+        loggit(2, "User id given is blank or corrupt: [$uid]");
+        return (FALSE);
+    }
+
+    //Includes
+    include get_cfg_var("cartulary_conf") . '/includes/env.php';
+
+    //Get user prefs
+    $prefs = get_user_prefs($uid);
+
+    //Check credentials
+    if (   !empty($prefs['mastodon_url'])
+        && !empty($prefs['mastodon_client_id'])
+        && !empty($prefs['mastodon_client_secret'])
+        && !empty($prefs['mastodon_access_token'])) {
+        loggit(1, "Mastodon is enabled for user: [$uid].");
+        return (TRUE);
+    }
+
+    //At least one pref was bad
+    loggit(1, "Mastodon is NOT enabled for user: [$uid].");
     return (FALSE);
 }
 
@@ -2639,6 +2741,12 @@ function get_s3_info($uid = NULL)
         $s3info['secret'] = $prefs['s3secret'];
         $s3info['bucket'] = $prefs['s3bucket'];
         $s3info['cname'] = $prefs['s3cname'];
+        $s3info['key_assets'] = $prefs['s3key_assets'];
+        $s3info['secret_assets'] = $prefs['s3secret_assets'];
+        $s3info['bucket_assets'] = $prefs['s3bucket_assets'];
+        $s3info['cname_assets'] = $prefs['s3cname_assets'];
+        $s3info['endpoint_assets'] = $prefs['s3endpoint_assets'];
+        $s3info['region_assets'] = $prefs['s3region_assets'];
         loggit(1, "User: [$uid] has s3 info.  Returning it.");
         return ($s3info);
     }
@@ -2870,4 +2978,47 @@ function search_users($query = NULL, $max = NULL)
 
     loggit(1, "Returning: [$count] users that fit search.");
     return ($users);
+}
+
+
+//Get the user id that goes with this cart token
+function get_user_id_from_carttoken($token = NULL)
+{
+    //If token is blank bail
+    if (empty($token)) {
+        loggit(2, "Can't get the uid from this token: [$token]");
+        return (FALSE);
+    }
+
+    //Includes
+    include get_cfg_var("cartulary_conf") . '/includes/env.php';
+
+    //Connect to the database server
+    $dbh = new mysqli($dbhost, $dbuser, $dbpass, $dbname) or loggit(2, "MySql error: " . $dbh->error);
+
+    //Do the call
+    $sql = $dbh->prepare("SELECT uid FROM $table_prefs WHERE carttoken=?") or loggit(2, "MySql error: " . $dbh->error);
+    $sql->bind_param("s", $token) or loggit(2, "MySql error: " . $dbh->error);
+    $sql->execute() or loggit(2, "MySql error: " . $dbh->error);
+    $sql->store_result() or loggit(2, "MySql error: " . $dbh->error);
+
+    //Check results
+    $returned = $sql->num_rows();
+    if ($returned > 1) {
+        $sql->close()
+        or loggit(2, "MySql error: " . $dbh->error);
+        loggit(2, "Bad token lookup attempt for: [$token].  Too many records returned.");
+        return (FALSE);
+    }
+    if ($returned < 1) {
+        $sql->close()
+        or loggit(2, "MySql error: " . $dbh->error);
+        loggit(2, "No user exists for this token: [$token]");
+        return (NULL);
+    }
+    $sql->bind_result($uid) or loggit(2, "MySql error: " . $dbh->error);
+    $sql->fetch() or loggit(2, "MySql error: " . $dbh->error);
+
+    loggit(1, "Returning user id: [$uid] for token: [$token]");
+    return ($uid);
 }

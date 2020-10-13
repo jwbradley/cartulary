@@ -49,7 +49,8 @@ function get_article($id = NULL, $uid = NULL)
         return (FALSE);
     }
     if (empty($uid)) {
-
+        loggit(2, "The user id given is corrupt or blank: [$uid]");
+        return (FALSE);
     }
 
     //Includes
@@ -400,7 +401,7 @@ function add_article($url = NULL, $title = NULL, $content = NULL, $analysis = NU
     //Now that we have a good id, put the article into the database
     $stmt = "INSERT INTO $table_article (id,url,title,content,analysis,createdon,shorturl,sourceurl,sourcetitle) VALUES (?,?,?,?,?,?,?,?,?)";
     $sql = $dbh->prepare($stmt) or loggit(2, "MySql error: " . $dbh->error);
-    $sql->bind_param("sssssssss", $id, $url, $title, $content, $analysis, $createdon, $shorturl, $sourceurl, $sourcetitle) or loggit(2, "MySql error: " . $dbh->error);
+    $sql->bind_param("sssssdsss", $id, $url, $title, $content, $analysis, $createdon, $shorturl, $sourceurl, $sourcetitle) or loggit(2, "MySql error: " . $dbh->error);
     $sql->execute() or loggit(2, "MySql error: " . $dbh->error);
     $sql->close() or loggit(2, "MySql error: " . $dbh->error);
 
@@ -494,7 +495,7 @@ function user_can_view_article($aid = NULL, $uid = NULL)
 }
 
 
-//Retrieve an article from the repository
+//Retrieve articles from repository as a batch
 function get_articles($uid = NULL, $max = NULL, $pub = FALSE, $archive = FALSE)
 {
     //Check parameters
@@ -572,6 +573,107 @@ function get_articles($uid = NULL, $max = NULL, $pub = FALSE, $archive = FALSE)
             'staticurl' => get_article_static_url($aid, $uid),
             'createdon' => $acreatedon,
             'content' => $acontent,
+            'linkedon' => $clinkedon,
+            'sourceurl' => $asourceurl,
+            'sourcetitle' => $asourcetitle);
+        $count++;
+    }
+
+    $sql->close() or loggit(2, "MySql error: " . $dbh->error);
+
+    loggit(1, "Returning: [$count] articles for user: [$uid]");
+    return ($articles);
+}
+
+
+//Retrieve list of articles for a user without the content
+function get_article_list($uid = NULL, $max = NULL, $pub = FALSE, $archive = FALSE, $since = NULL)
+{
+    //Check parameters
+    if ($uid == NULL) {
+        loggit(2, "The user id given is corrupt or blank: [$uid]");
+        return (FALSE);
+    }
+
+    //Includes
+    include get_cfg_var("cartulary_conf") . '/includes/env.php';
+
+
+    //Is this a request for a certain month's worth of posts?
+    if ($archive != FALSE) {
+        $mfirst = mktime(0, 0, 0);
+        //loggit(3, "Timestamp of start of day: [".$mfirst."]");
+        $mlast = mktime(23, 59, 00);
+        //loggit(3, "Timestamp of end of day: [".$mlast."]");
+    }
+
+    //Connect to the database server
+    $dbh = new mysqli($dbhost, $dbuser, $dbpass, $dbname) or loggit(2, "MySql error: " . $dbh->error);
+
+    //Look for the sid in the session table
+    $sqltxt = "SELECT $table_article.id,
+                    $table_article.title,
+                    $table_article.url,
+                    $table_article.shorturl,
+                    $table_article.createdon,
+                    $table_catalog.linkedon,
+		    $table_article.sourceurl,
+	            $table_article.sourcetitle
+	     FROM $table_article,$table_catalog
+	     WHERE $table_catalog.userid=?
+             AND ($table_catalog.articleid=$table_article.id)";
+
+    if ($pub == TRUE) {
+        $sqltxt .= " AND ($table_catalog.articleid=$table_article.id OR $table_catalog.public=1)";
+    }
+
+    if (empty($since)) {
+        if ($archive != FALSE) {
+            $sqltxt .= " AND $table_catalog.linkedon > $mfirst AND $table_catalog.linkedon < $mlast";
+        }
+
+        $sqltxt .= " ORDER BY $table_catalog.linkedon DESC";
+    } else {
+        $sqltxt .= " AND $table_catalog.linkedon > ?";
+
+        $sqltxt .= " ORDER BY $table_catalog.linkedon DESC";
+    }
+
+    if (empty($max) || !is_numeric($max)) {
+        $max = $default_max_opml_items;
+    }
+    $sqltxt .= " LIMIT ?";
+
+    loggit(1, "[$sqltxt]");
+    $sql = $dbh->prepare($sqltxt) or loggit(2, "MySql error: " . $dbh->error);
+    if(empty($since)) {
+        $sql->bind_param("sd", $uid, $max) or loggit(2, "MySql error: " . $dbh->error);
+    } else {
+        $sql->bind_param("sdd", $uid, $since, $max) or loggit(2, "MySql error: " . $dbh->error);
+    }
+
+    $sql->execute() or loggit(2, "MySql error: " . $dbh->error);
+    $sql->store_result() or loggit(2, "MySql error: " . $dbh->error);
+
+    //See if there were any articles for this user
+    if ($sql->num_rows() < 1) {
+        $sql->close()
+        or loggit(2, "MySql error: " . $dbh->error);
+        loggit(1, "No articles returned for user: [$uid] with given criteria.");
+        return (array());
+    }
+
+    $sql->bind_result($aid, $atitle, $aurl, $ashorturl, $acreatedon, $clinkedon, $asourceurl, $asourcetitle) or loggit(2, "MySql error: " . $dbh->error);
+
+    $articles = array();
+    $count = 0;
+    while ($sql->fetch()) {
+        $articles[$count] = array('id' => $aid,
+            'title' => $atitle,
+            'url' => $aurl,
+            'shorturl' => $ashorturl,
+            'staticurl' => get_article_static_url($aid, $uid),
+            'createdon' => $acreatedon,
             'linkedon' => $clinkedon,
             'sourceurl' => $asourceurl,
             'sourcetitle' => $asourcetitle);
@@ -685,7 +787,7 @@ function get_articles_in_range($uid = NULL, $max = NULL, $pub = FALSE, $dstart =
 
 
 //Search for articles that match query
-function search_articles($uid = NULL, $query = NULL, $max = NULL, $pub = FALSE)
+function search_articles($uid = NULL, $query = NULL, $max = NULL, $pub = FALSE, $withopml = FALSE)
 {
     //Check parameters
     if ($uid == NULL) {
@@ -716,15 +818,33 @@ function search_articles($uid = NULL, $query = NULL, $max = NULL, $pub = FALSE)
 
     //Look for the sid in the session table
     if ($pub == TRUE) {
-        $sqltxt = "SELECT $table_article.id,$table_article.title,$table_article.url
-	     FROM $table_article,$table_catalog
-	     WHERE ( $table_catalog.userid=? AND ($table_catalog.articleid=$table_article.id OR $table_catalog.public=1) )
-    ";
+        $sqltxt = "SELECT $table_article.id,
+                          $table_article.title,
+                          $table_article.url
+	              FROM $table_article,$table_catalog
+	              WHERE ( $table_catalog.userid=? AND ($table_catalog.articleid=$table_article.id OR $table_catalog.public=1) )";
+        if($withopml) {
+            $sqltxt = "SELECT $table_article.id,
+                              $table_article.title,
+                              $table_article.url,
+                              $table_article.content,
+                              $table_catalog.staticurl
+                       FROM $table_article,$table_catalog
+	                   WHERE ( $table_catalog.userid=? AND ($table_catalog.articleid=$table_article.id OR $table_catalog.public=1) )";
+        }
     } else {
         $sqltxt = "SELECT $table_article.id,$table_article.title,$table_article.url
 	     FROM $table_article,$table_catalog
-	     WHERE ( $table_catalog.userid=? AND ($table_catalog.articleid=$table_article.id) )
-    ";
+	     WHERE ( $table_catalog.userid=? AND ($table_catalog.articleid=$table_article.id) )";
+        if($withopml) {
+           $sqltxt = "SELECT $table_article.id,
+                             $table_article.title,
+                             $table_article.url,
+                             $table_article.content,
+                             $table_catalog.staticurl
+	                  FROM $table_article,$table_catalog
+	                  WHERE ( $table_catalog.userid=? AND ($table_catalog.articleid=$table_article.id) )";
+        }
     }
 
     //Append search criteria
@@ -758,16 +878,33 @@ function search_articles($uid = NULL, $query = NULL, $max = NULL, $pub = FALSE)
         return (FALSE);
     }
 
-    $sql->bind_result($aid, $atitle, $aurl) or loggit(2, "MySql error: " . $dbh->error);
+    if($withopml) {
+        $sql->bind_result($aid, $atitle, $aurl, $acontent, $astaticurl) or loggit(2, "MySql error: " . $dbh->error);
+    } else {
+        $sql->bind_result($aid, $atitle, $aurl) or loggit(2, "MySql error: " . $dbh->error);
+    }
 
     $articles = array();
     $count = 0;
     while ($sql->fetch()) {
         $articles[$count] = array('id' => $aid, 'title' => $atitle, 'url' => $aurl);
+        if($withopml) {
+            $articles[$count]['content'] = $acontent;
+            $articles[$count]['staticurl'] = $astaticurl;
+        }
         $count++;
     }
 
     $sql->close() or loggit(2, "MySql error: " . $dbh->error);
+
+    if($withopml) {
+        $s3url = build_opml_feed($uid, $max, FALSE, $articles, FALSE, "search/articlesearch", TRUE, "Article search results: [".$query['flat']."]");
+        loggit(3, "OPMLURL: $s3url");
+        if(is_string($s3url)) {
+            $articles['opmlurl'] = $s3url;
+            loggit(3, "OPMLURL: ".$articles['opmlurl']);
+        }
+    }
 
     loggit(1, "Returning: [$count] articles for user: [$uid]");
     return ($articles);
@@ -967,7 +1104,7 @@ function purge_orphaned_articles()
 
 
 //Build an opml version of the user's article list
-function build_opml_feed($uid = NULL, $max = NULL, $archive = FALSE, $articles = NULL, $nos3 = FALSE)
+function build_opml_feed($uid = NULL, $max = NULL, $archive = FALSE, $articles = NULL, $nos3 = FALSE, $s3filename = NULL, $returns3url = FALSE, $giventitle = NULL)
 {
     //Check parameters
     if ($uid == NULL) {
@@ -984,7 +1121,7 @@ function build_opml_feed($uid = NULL, $max = NULL, $archive = FALSE, $articles =
     $prefs = get_user_prefs($uid);
 
     //If this user doesn't want his cart feed public, then exit
-    if ($prefs['publicopml'] == 1 && $nos3 == FALSE) {
+    if ($prefs['publicopml'] == 1 && $nos3 == FALSE && (empty($articles) || !is_array($articles) || empty($s3filename))) {
         loggit(3, "User: [$uid] want's their article feed to be private.");
         return (FALSE);
     }
@@ -1013,6 +1150,11 @@ function build_opml_feed($uid = NULL, $max = NULL, $archive = FALSE, $articles =
         $dateModified = date("D, d M Y H:i:s O", $articles[0]['createdon']);
     }
 
+    $outlinetitle = "What $username is reading";
+    if(!empty($giventitle)) {
+        $outlinetitle = $giventitle;
+    }
+
     //The feed string
     $opml = '<?xml version="1.0" encoding="ISO-8859-1"?>' . "\n";
     $opml .= "<!-- OPML generated by " . $system_name . " v" . $version . " on " . date("D, d M Y H:i:s O") . " -->\n";
@@ -1020,7 +1162,7 @@ function build_opml_feed($uid = NULL, $max = NULL, $archive = FALSE, $articles =
 
     $opml .= "
       <head>
-        <title>" . xmlentities("What $username is reading") . "</title>
+        <title>" . xmlentities($outlinetitle) . "</title>
         <dateCreated>$dateCreated</dateCreated>
         <dateModified>$dateModified</dateModified>
         <ownerName>" . xmlentities(get_user_name_from_uid($uid)) . "</ownerName>
@@ -1071,12 +1213,17 @@ function build_opml_feed($uid = NULL, $max = NULL, $archive = FALSE, $articles =
 
 
     //If this user has S3 storage enabled, then do it
+    $s3res = FALSE;
     if ((s3_is_enabled($uid) || sys_s3_is_enabled()) && !$nos3) {
         //First we get all the key info
         $s3info = get_s3_info($uid);
 
         //Get the microblog feed file name
-        $filename = $default_opml_file_name;
+        if(!empty($s3filename)) {
+            $filename = $s3filename.".".time().".opml";
+        } else {
+            $filename = $default_opml_file_name;
+        }
         $arcpath = '';
 
         //Was this a request for a monthly archive?
@@ -1092,12 +1239,15 @@ function build_opml_feed($uid = NULL, $max = NULL, $archive = FALSE, $articles =
             //loggit(3, "Could not create S3 file: [$filename] for user: [$username].");
         } else {
             $s3url = get_s3_url($uid, $arcpath, $filename);
-            loggit(1, "Wrote feed to S3 at url: [$s3url].");
+            loggit(3, "Wrote feed to S3 at url: [$s3url].");
         }
     }
 
 
-    loggit(1, "Built article opml feed for user: [$username | $uid].");
+    loggit(3, "Built article opml feed for user: [$username | $uid].");
+    if($returns3url && $s3res) {
+        return($s3url);
+    }
     return ($opml);
 }
 
@@ -1309,4 +1459,510 @@ function imap_fetch_emails_to_articles($uid = NULL, $hostname = "", $username = 
 
 
     return $count;
+}
+
+
+//Set the feed error count on this feed to a given value
+function set_article_title($aid = NULL, $title = NULL)
+{
+    //Check parameters
+    if (empty($aid)) {
+        loggit(2, "The article id is blank or corrupt: [$aid]");
+        return (FALSE);
+    }
+    if (empty($title)) {
+        loggit(2, "The title is blank or corrupt: [$title]");
+        return (FALSE);
+    }
+
+    //Includes
+    include get_cfg_var("cartulary_conf") . '/includes/env.php';
+
+    //Connect to the database server
+    $dbh = new mysqli($dbhost, $dbuser, $dbpass, $dbname) or loggit(2, "MySql error: " . $dbh->error);
+
+    //Now that we have a good id, put the article into the database
+    $stmt = "UPDATE $table_article SET title=? WHERE id=?";
+    $sql = $dbh->prepare($stmt) or loggit(2, "MySql error: " . $dbh->error);
+    $sql->bind_param("ss", $title, $aid) or loggit(2, "MySql error: " . $dbh->error);
+    $sql->execute() or loggit(2, "MySql error: " . $dbh->error);
+    $sql->close();
+
+    //Log and return
+    loggit(1, "Set title for article:[$aid] to: [$title].");
+    return (TRUE);
+}
+
+
+//Get the time of the last article import
+function get_last_article_import_time($uid = NULL)
+{
+    //Check parameters
+    if (empty($uid)) {
+        loggit(2, "User id given is blank or corrupt: [$uid]");
+        return (FALSE);
+    }
+
+    //Includes
+    include get_cfg_var("cartulary_conf") . '/includes/env.php';
+
+    //Get user prefs
+    $prefs = get_user_prefs($uid);
+
+    //At least one pref was bad
+    return ($prefs['lastarticleimporttime']);
+}
+
+
+//Set the last article import time for a user
+function set_last_article_import_time($uid = NULL, $time = NULL)
+{
+    //Check parameters
+    if (empty($uid)) {
+        loggit(2, "The user id was corrupt or blank: [$uid]");
+        return (FALSE);
+    }
+    if (empty($time)) {
+        loggit(2, "The time given was corrupt or blank: [$time]");
+        return (FALSE);
+    }
+
+    //Includes
+    include get_cfg_var("cartulary_conf") . '/includes/env.php';
+
+    //Connect to the database server
+    $dbh = new mysqli($dbhost, $dbuser, $dbpass, $dbname) or loggit(2, "MySql error: " . $dbh->error);
+
+    //Look for the uid in the session table
+    $stmt = "UPDATE $table_prefs SET lastarticleimporttime=? WHERE uid=?";
+    $sql = $dbh->prepare($stmt) or loggit(2, "MySql error: " . $dbh->error);
+    $sql->bind_param("ds", $time, $uid) or loggit(2, "MySql error: " . $dbh->error);
+    $sql->execute() or loggit(2, "MySql error: " . $dbh->error);
+    $sql->close() or loggit(2, "MySql error: " . $dbh->error);
+
+    //Return
+    loggit(1, "Set last article import time to: [$time] for user: [$uid].");
+    return (TRUE);
+}
+
+
+//Article extraction as a function
+use andreskrey\Readability\Readability;
+use andreskrey\Readability\HTMLParser;
+use andreskrey\Readability\Configuration;
+function cartulize($url = NULL, $content = NULL, $reqtitle = NULL)
+{
+    //Environment
+    include get_cfg_var("cartulary_conf") . '/includes/env.php';
+
+    // Include path
+    set_include_path("$confroot/$libraries" . PATH_SEPARATOR . get_include_path());
+
+    include "/opt/cartulary/libraries/readability-php/src/Configuration.php";
+    include "/opt/cartulary/libraries/readability-php/src/ParseException.php";
+    include "/opt/cartulary/libraries/readability-php/src/Nodes/NodeTrait.php";
+    include "/opt/cartulary/libraries/readability-php/src/Nodes/DOM/DOMAttr.php";
+    include "/opt/cartulary/libraries/readability-php/src/Nodes/DOM/DOMCdataSection.php";
+    include "/opt/cartulary/libraries/readability-php/src/Nodes/DOM/DOMCharacterData.php";
+    include "/opt/cartulary/libraries/readability-php/src/Nodes/DOM/DOMComment.php";
+    include "/opt/cartulary/libraries/readability-php/src/Nodes/DOM/DOMDocumentFragment.php";
+    include "/opt/cartulary/libraries/readability-php/src/Nodes/DOM/DOMDocumentType.php";
+    include "/opt/cartulary/libraries/readability-php/src/Nodes/DOM/DOMElement.php";
+    include "/opt/cartulary/libraries/readability-php/src/Nodes/DOM/DOMEntity.php";
+    include "/opt/cartulary/libraries/readability-php/src/Nodes/DOM/DOMEntityReference.php";
+    include "/opt/cartulary/libraries/readability-php/src/Nodes/DOM/DOMNode.php";
+    include "/opt/cartulary/libraries/readability-php/src/Nodes/DOM/DOMNotation.php";
+    include "/opt/cartulary/libraries/readability-php/src/Nodes/DOM/DOMProcessingInstruction.php";
+    include "/opt/cartulary/libraries/readability-php/src/Nodes/DOM/DOMText.php";
+    include "/opt/cartulary/libraries/readability-php/src/Nodes/NodeUtility.php";
+    include "/opt/cartulary/libraries/readability-php/src/Nodes/DOM/DOMDocument.php";
+    include "/opt/cartulary/libraries/readability-php/src/Readability.php";
+
+
+    //Punt if the url is blank
+    if (empty($url)) {
+        loggit(2, "The url was blank or corrupt: [$url].");
+        return (FALSE);
+    }
+
+    //Globals
+    $effective_url = $url;
+    $html_only = true;
+    $ispdf = FALSE;
+    $referer = "";
+    $localcontent = FALSE;
+    if (!empty($content)) {
+        $localcontent = TRUE;
+    }
+    $title = "";
+
+    // Get a start time
+    $tstart = time();
+
+    // Sanitize and validate incoming URL string
+    if (!preg_match('!^https?://.+!i', $url)) {
+        $url = 'http://' . $url;
+    }
+    $url = filter_var($url, FILTER_SANITIZE_URL);
+    $test = filter_var($url, FILTER_VALIDATE_URL, FILTER_FLAG_SCHEME_REQUIRED);
+    // deal with bug http://bugs.php.net/51192 (present in PHP 5.2.13 and PHP 5.3.2)
+    if ($test === false) {
+        $test = filter_var(strtr($url, '-', '_'), FILTER_VALIDATE_URL, FILTER_FLAG_SCHEME_REQUIRED);
+    }
+    if ($test !== false && $test !== null && preg_match('!^https?://!', $url)) {
+        // all okay
+        unset($test);
+    } else {
+        loggit(2, "Invalid url supplied: [$url]");
+        exit(NULL);
+    }
+
+    //Resolve re-directs
+    //$newurl = get_final_url($url);
+    $newurl = $url;
+
+    //Remove feedburner garbage
+    $url = trim(rtrim(preg_replace("/&?utm_(.*?)\=[^&]+/", "", $newurl), '?'));
+
+    //See if the response returned was actually a meta-refresh forwarding document
+    //##: -------  PRE-PROCESS the URL here to make sure we dodge any weirdness like proxies or non-HTML content-types
+    //Feed proxy?
+    if(!$localcontent) {
+        if (preg_match('/feedproxy\.google\.com/i', $url)) {
+            $oldurl = $url;
+            $url = get_final_url($oldurl);
+            loggit(3, "Converting feedproxy url: [$oldurl] to [$url].");
+        }
+        if (preg_match('/wsj\.com\/articles/i', $url)) {
+            $oldurl = $url;
+            $url = str_replace("wsj.com/articles/", "wsj.com/amp/articles/", $url);
+            loggit(3, "Converting wsj url: [$oldurl] to [$url].");
+        }
+        if (preg_match('/ft\.com\//i', $url)) {
+            $referer = "https://www.google.com";
+            loggit(3, "Setting referer to: [$referer].");
+        }
+
+        //##: ------- END PRE-PROCESS of URL -----------------------------------------------------------------------------
+        $referer = "https://www.google.com";
+        $response = fetchUrlExtra($url, 30, $referer);
+        //loggit(3, "DEBUG: ".print_r($response, TRUE));
+        $mret = preg_match('|http-equiv.*refresh.*content="\s*\d+\s*;\s*url=\'?(.*?)\'?\s*"|i', $response['body'], $mrmatches);
+        if (($mret > 0) && !empty($mrmatches[1])) {
+            //loggit(3, "Found a meta refresh pointing to: [" . $mrmatches[1] . "].");
+            $url = get_final_url($mrmatches[1]);
+            $response = fetchUrlExtra($url);
+        }
+        $html = $response['body'];
+
+        //Reddit
+        if (preg_match('/^https?\:\/\/(www\.)?reddit\.com/i', $url)) {
+            loggit(3, "Getting a reddit link.");
+
+            $luie = libxml_use_internal_errors(true);
+            $doc = new DOMDocument();
+            $doc->loadHTML($html);
+            //Get the title
+            $nodes = $doc->getElementsByTagName("title");
+            $title = $nodes->item(0)->nodeValue;
+            loggit(3, "Reddit title: $title");
+            libxml_use_internal_errors($luie);
+
+            if (preg_match("/\<p.*class=\"title.*\<a.*class=\"title.*href=\"(.*)\"/iU", $html, $matches)) {
+                $url = get_final_url($matches[1]);
+                loggit(3, "Reddit link: [" . $url . "]");
+                $response = fetchUrlExtra($url);
+                $html = $response['body'];
+            } else {
+                loggit(2, "Couldn't extract Reddit link.");
+            }
+
+            //Memeorandum
+        } else if (preg_match('/memeorandum\.com/i', $url)) {
+            loggit(3, "Converting memeorandum.com link to span ref.");
+            //Get the code from the link
+            $posLastSlash = strripos($url, '/');
+            $posPoundA = stripos($url, '#a', $posLastSlash);
+            $code = substr($url, $posPoundA + 2);
+
+            if (preg_match("/\<span.*pml=\"$code\".*url=\"(.*)\".*head=\"(.*)\"/iU", $html, $matches)) {
+                $url = get_final_url($matches[1]);
+                $title = $matches[2];
+                loggit(3, "Memeorandum link-through url: [" . $url . "]");
+                $response = fetchUrlExtra($url);
+                $html = $response['body'];
+            } else {
+                loggit(2, "Couldn't extract Memeorandum link.");
+            }
+        }
+
+        //Is this a PDF?
+        if (substr($response['body'], 0, 4) == "%PDF") {
+            $ispdf = TRUE;
+            $pdfbody = $response['body'];
+            loggit(3, "The url: [$url] is a PDF document.");
+        }
+    } else {
+        $html = $content;
+        loggit(3, "DEBUG: Using local content instead of fetching url: [$url]");
+    }
+
+    // ---------- BEGIN ARTICLE PROCESSING ----------
+    //We skip all the extraction stuff if the article was already in the database
+
+    //Get the page
+    if (!$localcontent && $response) {
+        $effective_url = $response['effective_url'];
+        loggit(3, "Article effective url is: [$effective_url].");
+
+        $html = $response['body'];
+    }
+
+    //loggit(3, "ARTICLE: [$html]");
+    if (empty($html)) {
+        loggit(3, "DEBUG: Blank content returned for html.");
+    }
+
+    // Remove strange things
+    $html = str_replace('</[>', '', $html);
+
+    //FC Editor conversion
+    $html = preg_replace("/\<ul\ class=\"outline[^>]*\"\>\<li\ class=\"ou\ outline[^>]*\"\>(.*)\<\/li>\<\/ul\>/iU", "<p>$1</p>", $html);
+
+    // Convert encoding
+    if(!$localcontent) {
+        $html = convert_to_utf8($html, $response['headers']);
+    } else {
+        $html = convert_to_utf8($html);
+    }
+
+    //Was there an error?
+    if (!$localcontent && (!$response || $response['status_code'] >= 400)) {
+        loggit(2, 'Got back: [' . $response['status_code'] . '] Error retrieving ' . $url . ' [' . $effective_url . ']');
+        exit(NULL);
+    }
+
+    //Is this a youtube link?
+    if (preg_match('/youtube\.com/i', $url)) {
+        loggit(3, "Cartulizing a Youtube video.");
+        preg_match("/v[\/\=]([A-Za-z0-9\_\-]*)/i", $url, $matches) || die("Couldn't extract YouTube ID string.");
+        $content = '<br/><iframe class="bodyvid" src="https://www.youtube.com/embed/' . $matches[1] . '" frameborder="0" allowfullscreen></iframe>';
+        preg_match("/\<meta.*property\=\"og\:title\".*content\=\"(.*)\".*\>/i", $html, $matches) || die("Couldn't extract the YouTube video title.");
+        $title = $matches[1];
+        loggit(3, "Youtube video title: [$title].");
+        $analysis = "";
+        $slimcontent = $content;
+
+        //Is this an image
+    } else if (url_is_a_picture($url)) {
+        loggit(3, "Getting an image.");
+        loggit(3, "Image source: [" . $url . "]");
+        $content = '<br/><img style="width:600px;" src="' . $url . '"></img>';
+        $analysis = "";
+        $slimcontent = $content;
+
+        //Is this audio
+    } else if (url_is_audio($url)) {
+        loggit(3, "Getting an audio url.");
+        loggit(3, "Audio source: [" . $url . "]");
+        $mt = make_mime_type($url);
+        $content = '<br/><audio style="width:400px" controls="true"><source src="' . $url . '" type="' . $mt . '"></audio>';
+        $analysis = "";
+        $slimcontent = $content;
+
+        //Is this video
+    } else if (url_is_video($url)) {
+        loggit(3, "Getting a video url.");
+        loggit(3, "Video source: [" . $url . "]");
+        $mt = make_mime_type($url);
+        $content = '<br/><video style="width:95%;margin:0 auto;display:block;" controls="true"><source src="' . $url . '" type="' . $mt . '"></video>';
+        $analysis = "";
+        $slimcontent = $content;
+
+        //Is this an imgur link?
+    } else if (preg_match('/imgur\.com/i', $url)) {
+        loggit(3, "Getting an image file as a full article.");
+        if (preg_match("/\<link.*rel=\"image_src.*href=\"(.*)\"/iU", $html, $matches)) {
+            $url = $matches[1];
+            loggit(3, "Imgur image source: [" . $url . "]");
+            $content = '<br/><img class="bodyvid" src="' . $matches[1] . '"></img>';
+        } else {
+            loggit(2, "Couldn't extract Imgur image: [" . $matches[1] . "]");
+        }
+        $analysis = "";
+        $slimcontent = $content;
+
+        //Askwoody?
+    } else if (preg_match('/^http.*askwoody\.com.*/i', $url)) {
+        loggit(3, "DEBUG: ----------------------> Askwoody.com post.");
+
+        $dom = new DomDocument();
+        $dom->loadHTML($html);
+        $eltitle = $dom->getElementsByTagName("title");
+        if ($eltitle->length > 0) {
+            $title = $eltitle->item(0)->textContent;
+        }
+        $classname = 'paddings';
+        $finder = new DomXPath($dom);
+        $nodes = $finder->query("(//div[contains(concat(' ', normalize-space(@class), ' '), ' $classname ')]//ul/li)[1]/*[self::p or self::blockquote or self::img or self::ul or self::ol or self::li or self::a]");
+        $tmp_dom = new DOMDocument();
+        foreach ($nodes as $node) {
+            $tmp_dom->appendChild($tmp_dom->importNode($node, true));
+        }
+        $content = clean_article_content($tmp_dom->saveHTML(), 0, FALSE, FALSE, $title, $effective_url);
+
+        $analysis = "";
+        $slimcontent = $content;
+
+    } else if (preg_match('/slate.*div.*class.*slate-paragraph/sUi', $html)) {
+        $html = str_replace('<aside', '<div', $html);
+        $html = str_replace('</aside>', '</div>', $html);
+
+        $luie = libxml_use_internal_errors(true);
+        $dom = new DomDocument();
+        $dom->loadHTML($html);
+        $eltitle = $dom->getElementsByTagName("title");
+        if ($eltitle->length > 0) {
+            $title = $eltitle->item(0)->textContent;
+        }
+        $classname = 'article__content';
+        $finder = new DomXPath($dom);
+        $nodes = $finder->query("(//div[contains(concat(' ', normalize-space(@class), ' '), ' $classname ')])/*[self::p or self::blockquote or self::img or self::ul or self::ol or self::li or self::a]");
+        $tmp_dom = new DOMDocument();
+        foreach ($nodes as $node) {
+            $tmp_dom->appendChild($tmp_dom->importNode($node, true));
+        }
+        $content = clean_article_content($tmp_dom->saveHTML(), 0, FALSE, FALSE, $title, $effective_url);
+        libxml_use_internal_errors($luie);
+
+        $analysis = "";
+        $slimcontent = $content;
+
+    } else if (preg_match('/.*mondaq.*div.*articlebody/sUi', $html)) {
+        $luie = libxml_use_internal_errors(true);
+        $dom = new DomDocument();
+        $dom->loadHTML($html);
+        $eltitle = $dom->getElementsByTagName("title");
+        if ($eltitle->length > 0) {
+            $title = $eltitle->item(0)->textContent;
+        }
+        $classname = 'articlebody';
+        $finder = new DomXPath($dom);
+        $nodes = $finder->query("(//div[contains(concat(' ', normalize-space(@id), ' '), ' $classname ')])/*[self::p or self::blockquote or self::img or self::ul or self::ol or self::li or self::a]");
+        $tmp_dom = new DOMDocument();
+        foreach ($nodes as $node) {
+            $tmp_dom->appendChild($tmp_dom->importNode($node, true));
+        }
+        $content = clean_article_content($tmp_dom->saveHTML(), 0, FALSE, FALSE, $title, $effective_url);
+        libxml_use_internal_errors($luie);
+
+        $analysis = "";
+        $slimcontent = $content;
+
+    } else if (preg_match('/jdsup.*div.*html-view-content.*jds-main-content/sUi', $html)) {
+        $luie = libxml_use_internal_errors(true);
+        $dom = new DomDocument();
+        $dom->loadHTML($html);
+        $eltitle = $dom->getElementsByTagName("title");
+        if ($eltitle->length > 0) {
+            $title = $eltitle->item(0)->textContent;
+        }
+        $classname = 'jds-main-content';
+        $finder = new DomXPath($dom);
+        $nodes = $finder->query("(//div[contains(concat(' ', normalize-space(@class), ' '), ' $classname ')])/*[self::p or self::blockquote or self::img or self::ul or self::ol or self::li or self::a]");
+        $tmp_dom = new DOMDocument();
+        foreach ($nodes as $node) {
+            $tmp_dom->appendChild($tmp_dom->importNode($node, true));
+        }
+        $content = clean_article_content($tmp_dom->saveHTML(), 0, FALSE, FALSE, $title, $effective_url);
+        libxml_use_internal_errors($luie);
+
+        $analysis = "";
+        $slimcontent = $content;
+
+        //Is this a blogger post?
+    } else if (preg_match('/meta.*blogger.*blogspot.*post-body/sUi', $html)) {
+        loggit(3, "DEBUG: ----------------------> Getting a blogger.com post.");
+        echo( "DEBUG: ----------------------> Getting a blogger.com post.");
+
+        $dom = new DomDocument();
+        $dom->loadHTML($html);
+        $eltitle = $dom->getElementsByTagName("title");
+        if ($eltitle->length > 0) {
+            $title = $eltitle->item(0)->textContent;
+        }
+        $classname = 'post-body';
+        $finder = new DomXPath($dom);
+        $nodes = $finder->query("//div[contains(concat(' ', normalize-space(@class), ' '), ' $classname ')]");
+        $tmp_dom = new DOMDocument();
+        foreach ($nodes as $node) {
+            $tmp_dom->appendChild($tmp_dom->importNode($node, true));
+        }
+        $content = clean_article_content($tmp_dom->saveHTML(), 0, FALSE, FALSE, $title, $effective_url);
+
+        $analysis = "";
+        $slimcontent = $content;
+
+        //Is this a PDF?
+    } else if ($ispdf) {
+        loggit(3, "Cartulizing a PDF.");
+        $content = '';
+        include "$confroot/$libraries/PDFParser/vendor/autoload.php";
+        $parser = new \Smalot\PdfParser\Parser();
+        $pdf = $parser->parseContent($pdfbody);
+        $details = $pdf->getDetails();
+        loggit(3, print_r($details, TRUE));
+        if (empty($title) && isset($details['title']) && !empty($details['title'])) {
+            $title = $details['title'];
+        } else if (empty($title)) {
+            $title = "Untitled PDF";
+        }
+        foreach ($pdf->getPages() as $page) {
+            $content .= "<p>" . $page->getText() . "</p>";
+        }
+        //$content = $pdf->getText();
+        //Do textual analysis and save it in the database
+        $analysis = implode(",", array_unique(str_word_count(strip_tags($content), 1)));
+        //Reduce all that whitespace
+        $slimcontent = clean_article_content($content, 0, FALSE, FALSE, $title);
+
+        //Normal web page
+    } else {
+        loggit(3, "Cartulizing article: [$url] with Readability.");
+
+        //Debugging loggit(3, print_r($html, TRUE));
+
+        //Set up an extraction
+        $readability = new Readability(new Configuration());
+
+        try {
+            $readability->parse($html);
+            $content = $readability->getContent();
+            $title = $readability->getTitle();
+            if (!empty($title)) {
+                loggit(3, "Got article: [$title] with Readability.");
+            }
+        } catch (\andreskrey\Readability\ParseException $e) {
+            loggit(3, "DEBUG: New cart process failed with error: [" . $e->getMessage . "]");
+            return (NULL);
+        }
+
+        //Do textual analysis and save it in the database
+        $analysis = implode(",", array_unique(str_word_count(strip_tags($content), 1)));
+
+        //Reduce all that whitespace
+        $content = clean_article_content($content, 0, TRUE, TRUE, $title, $effective_url);
+        $slimcontent = $content;
+    }
+
+    //Calculate how long it took to cartulize this article
+    $took = time() - $tstart;
+    loggit(3, "Article: [$url] took: [$took] seconds to cartulize.");
+
+    //Title override?
+    if (!empty($reqtitle)) {
+        $title = $reqtitle;
+    }
+
+    return (Array('title' => $title, 'content' => $slimcontent, 'analysis' => $analysis));
 }

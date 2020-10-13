@@ -120,6 +120,7 @@ var right = "right";
 var up = "up";
 var flatup = "flatup";
 var flatdown = "flatdown";
+var straightdown = "straightdown";
 var nodirection = "nodirection";
 var XML_CHAR_MAP = {
     '<': '&lt;',
@@ -1610,6 +1611,17 @@ function ConcordOp(root, concordInstance, _cursor) {
         }
         return root.find(".concord-cursor:first");
     };
+    this.getSelectedNodes = function(){
+        var op = this;
+        var retnodes = [];
+        var selnodes = root.find(".concord-node.selected");
+        for( var i = 0 ; i < selnodes.length ; i++ ) {
+            retnodes[i] = op.setCursorContext($(selnodes[i]));
+        }
+        //return root.find(".concord-node.selected");
+        return retnodes;
+    };
+
     this.getCursorRef = function(){
         return this.setCursorContext(this.getCursor());
     };
@@ -1744,6 +1756,27 @@ function ConcordOp(root, concordInstance, _cursor) {
                                 this.setCursor(cursor, multiple);
                             }
                         }
+                    }
+                }
+                break;
+            case straightdown:
+                for(var i = 0; i < count; i++) {
+                    var next = null;
+                    var cursor = concordInstance.op.getCursor();
+                    if (!cursor.hasClass("collapsed")) {
+                        var outline = cursor.children("ol");
+                        if (outline.length == 1) {
+                            var firstChild = outline.children(".concord-node:first");
+                            if (firstChild.length == 1) {
+                                next = firstChild;
+                            }
+                        }
+                    }
+                    if (!next) {
+                        next = concordInstance.op._walk_down(cursor);
+                    }
+                    if (next) {
+                        concordInstance.op.setCursor(next);
                     }
                 }
                 break;
@@ -2449,6 +2482,79 @@ function ConcordOp(root, concordInstance, _cursor) {
             this.setCursor(node);
             this.markChanged();
         };
+    this.jsonToOutline = function(xmlText, flSetFocus) {
+
+        if (flSetFocus == undefined) {
+            flSetFocus = true;
+        }
+
+        var doc = null;
+        if(typeof xmlText == "string") {
+            doc = $(JSON.parse(xmlText));
+            doc = doc[0];
+            console.log(doc);
+        } else {
+            doc = $(xmlText);
+        }
+        root.empty();
+        var title = "";
+        if(doc.head.title !== "undefined"){
+            title = doc.head.title;
+        }
+        this.setTitle(title);
+        var headers = {};
+        for( var i in doc.head) {
+            headers[i] = doc.head[i];
+        }
+        // doc.find("head").children().each(function(){
+        //     headers[$(this).prop("tagName")] = $(this).text();
+        // });
+        root.data("head", headers);
+        for( var i = 0 ; i < doc.body.length ; i++ ) {
+            console.log("TLNODE: " + doc.body[i].text);
+            root.append(concordInstance.editor.build(doc.body[i], true));
+        }
+        root.data("changed", false);
+        root.removeData("previousChange");
+        var expansionState = doc.head.expansionState;
+        if(expansionState && expansionState != ""){
+            var expansionStates = expansionState.split(/\s*,\s*/);
+            var nodeId = 1;
+            var cursor = root.find(".concord-node:first");
+            do {
+                if(cursor) {
+                    if(expansionStates.indexOf(""+nodeId) >= 0){
+                        cursor.removeClass("collapsed");
+                    }
+                    nodeId++;
+                }else{
+                    break;
+                }
+                var next = null;
+                if(!cursor.hasClass("collapsed")) {
+                    var outline = cursor.children("ol");
+                    if(outline.length == 1) {
+                        var firstChild = outline.children(".concord-node:first");
+                        if(firstChild.length == 1) {
+                            next = firstChild;
+                        }
+                    }
+                }
+                if(!next) {
+                    next = this._walk_down(cursor);
+                }
+                cursor = next;
+            } while(cursor!=null);
+        }
+        this.setTextMode(false);
+
+        if (flSetFocus) {
+            this.setCursor(root.find(".concord-node:first"));
+        }
+
+        root.data("currentChange", root.children().clone(true, true));
+        return true;
+    };
     this.xmlToOutline = function(xmlText, flSetFocus) { //2/22/14 by DW -- new param, flSetFocus
 
         if (flSetFocus == undefined) { //2/22/14 by DW
@@ -2458,6 +2564,7 @@ function ConcordOp(root, concordInstance, _cursor) {
         var doc = null;
         if(typeof xmlText == "string") {
             doc = $($.parseXML(xmlText));
+            console.log(doc);
         } else {
             doc = $(xmlText);
         }
@@ -2626,7 +2733,7 @@ function ConcordOpAttributes(concordInstance, cursor) {
         return {};
     };
     this.getOne = function(name) {
-        console.log(this.getAll()[name]);
+        //console.log(this.getAll()[name]);
         return this.getAll()[name];
     };
     this.makeEmpty = function() {
@@ -2761,6 +2868,37 @@ function Op(opmltext){
             var keyCaptured = false;
             var commandKey = event.metaKey || event.ctrlKey;
             switch(event.which) {
+                case 33:
+                    //Page up
+                    keyCaptured = true;
+                    break;
+                case 34:
+                    //Page down
+                    keyCaptured = true;
+                    break;
+                case 35:
+                    //End
+                    keyCaptured = true;
+                    if ( !concordInstance.op.inTextMode() ) {
+                        concordInstance.op.go(left, 32767);
+                        concordInstance.op.go(down, 32767);
+                        window.scrollTo(0, 999999);
+                        while ( concordInstance.op.countSubs() > 0 && concordInstance.op.subsExpanded() ) {
+                            concordInstance.op.go(right, 1);
+                            concordInstance.op.go(down, 32767);
+                        }
+                        window.scrollTo(0, 999999);
+                    }
+                    break;
+                case 36:
+                    //Home
+                    keyCaptured = true;
+                    if ( !concordInstance.op.inTextMode() ) {
+                        concordInstance.op.go(left, 32767);
+                        concordInstance.op.go(up, 32767);
+                        window.scrollTo(0, 0);
+                    }
+                    break;
                 case 8:
                     //Backspace
                     if(concord.mobile){

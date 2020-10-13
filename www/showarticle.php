@@ -1,6 +1,8 @@
 <? include get_cfg_var("cartulary_conf") . '/includes/env.php'; ?>
 <? include "$confroot/$templates/php_page_init.php" ?>
 <?
+
+
 // We have to have a valid article id to show
 $aid = $_REQUEST['aid'];
 if (empty($aid)) {
@@ -32,7 +34,8 @@ $tree_location = "Show Article";
 </head>
 <? include "$confroot/$templates/$template_html_posthead" ?>
 
-<body id="bodyArticle">
+<? //--- The body tag and anything else needed ---?>
+<? include "$confroot/$templates/$template_html_bodystart" ?>
 <? //--- Include the logo and menu bar html fragments --?>
 <? include "$confroot/$templates/$template_html_logotop" ?>
 <? include "$confroot/$templates/$template_html_menubar" ?>
@@ -50,7 +53,14 @@ $tree_location = "Show Article";
         <div id="content"><? echo $article['content']; ?></div>
         <div class="footer">
             <div class="divToolBox">
-                <a class="print" title="Printer Friendly" href="<? echo $showarticlepage . '-print?aid=' . $aid ?>"><img class="icon-print" src="/images/blank.gif" alt=""/> </a>
+                <?
+                $pfarticle_url = $showarticlepage . '-print?aid=' . $aid;
+                if(!empty($article['staticurl'])) {
+                    $pfarticle_url = $article['staticurl'];
+                }
+                ?>
+                <a class="print" title="Printer Friendly" href="<?echo $pfarticle_url?>"><img
+                            class="icon-print" src="/images/blank.gif" alt=""/> </a>
 
                 <? $rturl = $article['url']; ?>
 
@@ -69,8 +79,13 @@ $tree_location = "Show Article";
                            echo '&shorturl=' . urlencode($article['shorturl']);
                        } ?>"><img class="icon-retweet-1" src="/images/blank.gif" alt=""/> </a>
                 <? } ?>
-                <a class="link" title="Link to original source url." href="<? echo $article['url']; ?>"><img class="icon-hyperlink" src="/images/blank.gif" alt=""/> </a>
-                <a class="edit" title="Open in the Editor" href="<? echo $editorpage . '?aid=' . $aid ?>"><img class="icon-editor" src="/images/blank.gif" alt=""/> </a>
+                <a class="send" title="Email the article."
+                   href="mailto:?subject=Article:%20<? echo $article['title'] ?>&amp;body=<? echo $rturl ?>"><img
+                            class="icon-email-send" src="/images/blank.gif" alt=""/> </a>
+                <a class="link" title="Link to original source url." href="<? echo $article['url']; ?>"><img
+                            class="icon-hyperlink" src="/images/blank.gif" alt=""/> </a>
+                <a class="edit" title="Open in the Editor" href="<? echo $editorpage . '?aid=' . $aid ?>"><img
+                            class="icon-editor" src="/images/blank.gif" alt=""/> </a>
             </div>
         </div>
     </div>

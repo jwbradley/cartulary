@@ -53,7 +53,10 @@ $tree_location = "Articles";
         }</style>
 </head>
 <? include "$confroot/$templates/$template_html_posthead" ?>
-<body>
+
+<? //--- The body tag and anything else needed ---?>
+<? include "$confroot/$templates/$template_html_bodystart" ?>
+
 <? //--- Include the logo and menu bar html fragments --?>
 <? include "$confroot/$templates/$template_html_logotop" ?>
 <? include "$confroot/$templates/$template_html_menubar" ?>
@@ -85,11 +88,13 @@ $tree_location = "Articles";
                 <input id="btnSubmitDates" type="submit" class="btn btn-success" name="submitdateget" value="Get"/>
 
                 <div style="float:left;clear:both;">
-                    <a href="<? echo $s3cartfeed ?>" title="RSS Feed"><img class="icon-rss" alt="" src="/images/blank.gif"/></a>
+                    <a href="<? echo $s3cartfeed ?>" title="RSS Feed"><img class="icon-rss" alt=""
+                                                                           src="/images/blank.gif"/></a>
                     <a id="aOpmlExport" href="<? echo $s3cartopml ?>" title="OPML Feed"><img class="icon-opml" alt=""
-                                                                                        src="/images/blank.gif"/></a>
+                                                                                             src="/images/blank.gif"/></a>
                     <? if (imap_is_enabled($g_uid)) { ?><a id="aEmailImport" style="color:black;" href="#"
-                                                           title="Import articles from email."><i class="fa fa-inbox fa-2x"></i></a><? } ?>
+                                                           title="Import articles from email."><i
+                                class="fa fa-inbox fa-2x"></i></a><? } ?>
                 </div>
             </fieldset>
         </form>
@@ -107,18 +112,20 @@ $tree_location = "Articles";
                 <? $acount = 1 ?>
                 <? $lastdate = '' ?>
                 <? $today = date('D. F j, Y', time()); ?>
-                <?foreach ($articles as $article) {
-                    $thisdate = date('D. F j, Y', $article['linkedon']);
-                    if ($thisdate == $today) {
-                        $thisdate = "Today, " . $thisdate;
-                    }
-                    if ($thisdate != $lastdate) {
-                        if ($lastdate != '') {
-                            echo "</ul>\n";
-                        }?>
-                        <h3 class="article-section-header"><? echo $thisdate ?></h3>
-                        <ul class="article-section-list"><?
-                    }?>
+                <? foreach ($articles
+
+                as $article) {
+                $thisdate = date('D. F j, Y', $article['linkedon']);
+                if ($thisdate == $today) {
+                    $thisdate = "Today, " . $thisdate;
+                }
+                if ($thisdate != $lastdate) {
+                if ($lastdate != '') {
+                    echo "</ul>\n";
+                } ?>
+                <h3 class="article-section-header"><? echo $thisdate ?></h3>
+                <ul class="article-section-list"><?
+                    } ?>
 
                     <li id="tr<? echo $article['id'] ?>" data-artitle="<? echo $article['title'] ?>">
                         <div class="divArticleLink">
@@ -127,16 +134,16 @@ $tree_location = "Articles";
                                     <img class="icon-remove" src="/images/blank.gif" alt=""/></a><? } ?>
                             <input class="exparticle" id="chkArticle<? echo $acount ?>" type="checkbox"
                                    name="articles[]" value="<? echo $article['id'] ?>"/> <a
-                                href='<? echo $showarticlepage . "?" . "aid=" . $article['id']; ?>'><? echo $article['title'] ?></a>
+                                    href='<? echo $showarticlepage . "?" . "aid=" . $article['id']; ?>'><? echo $article['title'] ?></a>
                             <? if ($platform != "mobile") { ?>
                                 &nbsp;
                                 <a href="<? echo $editorpage ?>?aid=<? echo $article['id'] ?>"><img
-                                        class="icon-editor-small" src="/images/blank.gif" alt=""/></a>
+                                            class="icon-editor-small" src="/images/blank.gif" alt=""/></a>
                                 <a href="<? echo $article['url'] ?>"><img class="icon-extlink-small"
                                                                           src="/images/blank.gif" alt=""/></a>
                                 <a class="aDeleteArticle"
                                    href='<? echo $deletearticlecgi . "?" . "aid=" . $article['id']; ?>'><img
-                                        class="icon-remove-small" src="/images/blank.gif" alt=""/></a>
+                                            class="icon-remove-small" src="/images/blank.gif" alt=""/></a>
 
                             <? } ?>
                         </div>
@@ -148,8 +155,11 @@ $tree_location = "Articles";
                     <input id="btnSubmitArticles" type="submit" name="btnsub" style="display:none;"/>
             </form>
         <? } else { ?>
-            <p>No articles yet. Use the <a href="<? echo sprintf($bookmarklet_url, $system_url) ?>">Cartulize</a>
-                bookmarklet save some.</p>
+            <center>
+                <p>No articles found for the selected time period.</p>
+                <p>Use the <a href="<? echo sprintf($bookmarklet_url, $system_url) ?>">Cartulize</a> bookmarklet to save
+                    some.</p>
+            </center>
         <? } ?>
     </div>
 </div>
@@ -160,4 +170,3 @@ $tree_location = "Articles";
 
 <? include "$confroot/$templates/$template_html_postbody" ?>
 </html>
-

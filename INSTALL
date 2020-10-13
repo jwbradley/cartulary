@@ -1,6 +1,6 @@
 #!/bin/bash
 
-##: Server Setup on Ubuntu 12.04
+##: Server Setup on Ubuntu LTS 14.x and up.
 ##:
 ##:   This install script can be run as-is on a virgin system. If you're installing on an existing box
 ##:   it'd be better to walk through it first and adjust things
@@ -10,8 +10,20 @@
 
 
 ##: This script needs to be run with sudo
+SOURCEROOT="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
+SOURCEBASE=`basename $SOURCEROOT`
 INSTALLDIR="/opt/cartulary"
 ROOT_UID="0"
+CURRENTLY=`pwd`
+
+#echo "Installing from: [$SOURCEROOT -> $SOURCEBASE]";
+
+#We need to be one level up from the source code folder so we can move it into the install folder
+if [ "$CURRENTLY" == "$SOURCEROOT" ]; then
+    echo "Jumping up..."
+    cd ..
+fi
+pwd
 
 #Check if run as root
 if [ "$UID" -ne "$ROOT_UID" ] ; then
@@ -19,10 +31,19 @@ if [ "$UID" -ne "$ROOT_UID" ] ; then
         exit 1
 fi
 
+#Check that we're on Ubuntu
+if ! lsb_release -r | grep -i "1[4-9]\.[0-9][0-9]"; then
+        echo "This script only works on Ubuntu LTS 14 and up.  Sorry."
+        exit 1
+fi
+
+function pause(){
+   read -p "Press [Enter] to continue..."
+}
 
 ##: 0. Warning.
 clear
-echo 'This install script assumes it is being run on a virgin install of Ubuntu server 12.04 LTS.'
+echo 'This install script assumes it is being run on a virgin install of Ubuntu server LTS v12 and up.'
 echo 'Running this file as-is on a production system is going to most likely wreck a lot of stuff.'
 echo 'If that is the case, you should  **STOP NOW**  and do the installation by hand.'
 echo
@@ -33,18 +54,48 @@ echo
 read -p "This is your last chance to back out.  Are you really, really sure this is a virgin system? [Enter]"
 
 
-##: 1. Install Apache and PHP5
+##: 1. Install Apache and PHP
 clear
-echo 'Installing Apache, PHP and some modules.'
+echo 'Installing Apache, PHP and some modules...'
+curl -sL https://deb.nodesource.com/setup_8.x | sudo -E bash -
 apt-get update
-apt-get install -y apache2 php5 php5-cli libapache2-mod-php5 php5-mcrypt php5-curl php5-imap php5-tidy php5-gd ccze cstream ntp
-php5enmod imap
+if lsb_release -r | grep -i "16\.[0-9][0-9]"; then
+  apt-get install -y apache2 php7.0 php7.0-cli libapache2-mod-php7.0 php7.0-mcrypt php7.0-curl php7.0-imap php7.0-tidy php7.0-gd php7.0-mbstring ccze cstream ntp php7.0-xsl nodejs build-essential
+  phpenmod imap
+elif lsb_release -r | grep -i "18\.[0-9][0-9]"; then
+  add-apt-repository "deb http://archive.ubuntu.com/ubuntu $(lsb_release -sc) main multiverse restricted universe"
+  add-apt-repository -y ppa:ondrej/php
+  apt-get update
+  apt-get upgrade -y
+  apt-get install -y apache2 php7.0 php7.0-cli libapache2-mod-php7.0 php7.0-mcrypt php7.0-curl php7.0-imap php7.0-tidy php7.0-gd php7.0-mbstring php7.0-xsl
+  apt-get install -y ccze cstream ntp nodejs
+  apt-get install -y build-essential
+  phpenmod imap
+else
+  apt-get install -y apache2 php5 php5-cli libapache2-mod-php5 php5-mcrypt php5-curl php5-imap php5-tidy php5-gd ccze cstream ntp php5-xsl nodejs  build-essential
+  php5enmod imap
+fi
 
+#sudo update-alternatives --install /usr/bin/node node /usr/bin/nodejs 10
+cd $SOURCEROOT/aggrivate
+sudo npm -g install npm@latest
+sudo npm cache clean --force
+sudo npm i -g npm
+rm -rf node_modules
+sudo --user=$LOGNAME npm install
+cd -
 
 ##: 2. Install MySql
 clear
-echo 'Give MySQL a root password and write it down.'
-apt-get install -y mysql-server php5-mysql
+if lsb_release -r | grep -i "16\.[0-9][0-9]"; then
+  echo 'Give MySQL a root password and write it down.'
+  apt-get install -y mysql-server php7.0-mysql
+elif lsb_release -r | grep -i "18\.[0-9][0-9]"; then
+  apt-get -y install mysql-server php7.0-mysql
+else
+  echo 'Give MySQL a root password and write it down.'
+  apt-get install -y mysql-server php5-mysql
+fi
 #[you should set a root password during this step and write it down]
 #mysql_secure_installation
 #[No, Yes, Yes, Yes, Yes]
@@ -55,14 +106,27 @@ clear
 echo '#####################################################'
 echo '##---------------------------------------------------'
 echo '##                                                   '
-echo '##  Type your MySQL root password here when asked.   '
+echo '##  Type your MySQL root password here if asked.     '
 echo '##                                                   '
 echo '##---------------------------------------------------'
 echo '#####################################################'
 echo
-mysql -u root -p < cartulary-master/templates/newdb.sql >>/tmp/cartinstall.log 2>&1
-mysql -ucartulary -pcartulary cartulary < cartulary-master/templates/cartulary.sql >>/tmp/cartinstall.log 2>&1
-
+echo "Configuring MySQL. Please wait..."
+if lsb_release -r | grep -i "1[6-8]\.[0-9][0-9]"; then
+    echo  >> /etc/mysql/conf.d/mysql.cnf
+    echo '[mysqld]' >> /etc/mysql/conf.d/mysql.cnf
+    echo "sql_mode='NO_ENGINE_SUBSTITUTION'" >> /etc/mysql/conf.d/mysql.cnf
+    echo  >> /etc/mysql/conf.d/mysql.cnf
+    echo '[mysqld_safe]' >> /etc/mysql/conf.d/mysql.cnf
+    echo "sql_mode='NO_ENGINE_SUBSTITUTION'" >> /etc/mysql/conf.d/mysql.cnf
+fi
+/etc/init.d/mysql restart
+if lsb_release -r | grep -i "18\.[0-9][0-9]"; then
+  mysql -u root < $SOURCEROOT/templates/newdb.sql >>/tmp/cartinstall.log 2>&1
+else
+  mysql -u root -p < $SOURCEROOT/templates/newdb.sql >>/tmp/cartinstall.log 2>&1
+fi
+mysql -ucartulary -pcartulary cartulary < $SOURCEROOT/templates/cartulary.sql >>/tmp/cartinstall.log 2>&1
 
 ##: 4. Configure PHP
 echo
@@ -74,18 +138,43 @@ echo '##                                                   '
 echo '##---------------------------------------------------'
 echo '#####################################################'
 echo
-echo  >> /etc/php5/apache2/php.ini
-echo '[cartulary]' >> /etc/php5/apache2/php.ini
-echo "cartulary_conf=$INSTALLDIR" >> /etc/php5/apache2/php.ini
-echo 'post_max_size=300M' >> /etc/php5/apache2/php.ini
-echo 'upload_max_filesize=300M' >> /etc/php5/apache2/php.ini
-echo 'max_execution_time=90' >> /etc/php5/apache2/php.ini
-echo 'short_open_tag=On' >> /etc/php5/apache2/php.ini
-echo  >> /etc/php5/cli/php.ini
-echo '[cartulary]' >> /etc/php5/cli/php.ini
-echo "cartulary_conf=$INSTALLDIR" >> /etc/php5/cli/php.ini
-echo "short_open_tag=On" >> /etc/php5/cli/php.ini
-
+if lsb_release -r | grep -i "16\.[0-9][0-9]"; then
+    echo  >> /etc/php/7.0/apache2/php.ini
+    echo '[cartulary]' >> /etc/php/7.0/apache2/php.ini
+    echo "cartulary_conf=$INSTALLDIR" >> /etc/php/7.0/apache2/php.ini
+    echo 'post_max_size=300M' >> /etc/php/7.0/apache2/php.ini
+    echo 'upload_max_filesize=300M' >> /etc/php/7.0/apache2/php.ini
+    echo 'max_execution_time=90' >> /etc/php/7.0/apache2/php.ini
+    echo 'short_open_tag=On' >> /etc/php/7.0/apache2/php.ini
+    echo  >> /etc/php/7.0/cli/php.ini
+    echo '[cartulary]' >> /etc/php/7.0/cli/php.ini
+    echo "cartulary_conf=$INSTALLDIR" >> /etc/php/7.0/cli/php.ini
+    echo "short_open_tag=On" >> /etc/php/7.0/cli/php.ini
+elif lsb_release -r | grep -i "18\.[0-9][0-9]"; then
+    echo  >> /etc/php/7.0/apache2/php.ini
+    echo '[cartulary]' >> /etc/php/7.0/apache2/php.ini
+    echo "cartulary_conf=$INSTALLDIR" >> /etc/php/7.0/apache2/php.ini
+    echo 'post_max_size=300M' >> /etc/php/7.0/apache2/php.ini
+    echo 'upload_max_filesize=300M' >> /etc/php/7.0/apache2/php.ini
+    echo 'max_execution_time=90' >> /etc/php/7.0/apache2/php.ini
+    echo 'short_open_tag=On' >> /etc/php/7.0/apache2/php.ini
+    echo  >> /etc/php/7.0/cli/php.ini
+    echo '[cartulary]' >> /etc/php/7.0/cli/php.ini
+    echo "cartulary_conf=$INSTALLDIR" >> /etc/php/7.0/cli/php.ini
+    echo "short_open_tag=On" >> /etc/php/7.0/cli/php.ini
+else
+    echo  >> /etc/php5/apache2/php.ini
+    echo '[cartulary]' >> /etc/php5/apache2/php.ini
+    echo "cartulary_conf=$INSTALLDIR" >> /etc/php5/apache2/php.ini
+    echo 'post_max_size=300M' >> /etc/php5/apache2/php.ini
+    echo 'upload_max_filesize=300M' >> /etc/php5/apache2/php.ini
+    echo 'max_execution_time=90' >> /etc/php5/apache2/php.ini
+    echo 'short_open_tag=On' >> /etc/php5/apache2/php.ini
+    echo  >> /etc/php5/cli/php.ini
+    echo '[cartulary]' >> /etc/php5/cli/php.ini
+    echo "cartulary_conf=$INSTALLDIR" >> /etc/php5/cli/php.ini
+    echo "short_open_tag=On" >> /etc/php5/cli/php.ini
+fi
 
 ##: 5. Install Cartulary Files
 echo
@@ -97,7 +186,7 @@ echo '##                                                   '
 echo '##---------------------------------------------------'
 echo '#####################################################'
 echo
-mv cartulary-master $INSTALLDIR >>/tmp/cartinstall.log 2>&1
+mv $SOURCEBASE $INSTALLDIR >>/tmp/cartinstall.log 2>&1
 
 
 ##: 6. Configure Apache
@@ -110,7 +199,11 @@ echo '##                                                   '
 echo '##---------------------------------------------------'
 echo '#####################################################'
 echo
-cp $INSTALLDIR/templates/apache.conf /etc/apache2/sites-available/cartulary.conf >>/tmp/cartinstall.log 2>&1
+if lsb_release -r | grep -i "12\.[0-9][0-9]"; then
+  cp $INSTALLDIR/templates/apache12.conf /etc/apache2/sites-available/cartulary.conf >>/tmp/cartinstall.log 2>&1
+else
+  cp $INSTALLDIR/templates/apache.conf /etc/apache2/sites-available/cartulary.conf >>/tmp/cartinstall.log 2>&1
+fi
 ln -s /etc/apache2/sites-available/cartulary.conf /etc/apache2/sites-enabled/000-cartulary.conf >>/tmp/cartinstall.log 2>&1
 sed -i "s,\[CONFROOT\],$INSTALLDIR,g" /etc/apache2/sites-available/cartulary.conf
 a2enmod headers
@@ -142,9 +235,6 @@ echo '##---------------------------------------------------'
 echo '##                                                   '
 echo '##  Create cartulary.conf file.                      '
 echo '##                                                   '
-echo '##  - You are going to answer with "cartulary" as    '
-echo '##    the username and the password.                 '
-echo '##                                                   '
 echo '##  - Your fully qualified domain name(fqdn) will be '
 echo '##    how the outside world gets to your site.       '
 echo '##    Example:  my.server.com.                       '
@@ -156,7 +246,7 @@ echo '##                                                   '
 echo '##---------------------------------------------------'
 echo '#####################################################'
 echo
-php $INSTALLDIR/bin/confcheck.php 2>>/tmp/cartinstall.log
+php $INSTALLDIR/bin/confcheck.php minimal 2>>/tmp/cartinstall.log
 
 
 ##: 9. Check database version
@@ -211,7 +301,9 @@ echo '##---------------------------------------------------'
 echo '#####################################################'
 echo
 php $INSTALLDIR/bin/outlinescan.php
-php $INSTALLDIR/bin/feedpull.php
+cd $INSTALLDIR/aggrivate
+node aggrivate
+cd -
 php $INSTALLDIR/bin/feedscan.php
 php $INSTALLDIR/bin/buildrivers.php
 

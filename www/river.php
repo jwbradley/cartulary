@@ -1,8 +1,11 @@
-<? include get_cfg_var("cartulary_conf") . '/includes/env.php'; ?>
-<? include "$confroot/$templates/php_page_init.php" ?>
 <?
 $section = "River";
 $tree_location = "River";
+include get_cfg_var("cartulary_conf") . '/includes/env.php';
+include "$confroot/$templates/php_page_init.php";
+
+
+header("Content-Security-Policy-Report: script-src 'self' https://apis.google.com upgrade-insecure-requests");
 ?>
 
 <? include "$confroot/$templates/$template_html_prehead" ?>
@@ -11,21 +14,14 @@ $tree_location = "River";
     <title><? echo $tree_location ?></title>
     <? include "$confroot/$templates/$template_html_styles" ?>
     <? include "$confroot/$templates/$template_html_scripts" ?>
-    <script>
-        var Hidebigpics = false;
-        var Hidepics = false;
-        <?if ( $prefs['mobilehidebigpics'] == 1 && $platform == "mobile" ) {?>
-        Hidebigpics = true;
-        <?}?>
-        <?if ( $prefs['mobilehidepics'] == 1 && $platform == "mobile"  ) {?>
-        Hidepics = true;
-        <?}?>
 
-    </script>
+    <!-- Local custom -->
+    <script src="/script/local-river.js"></script>
 </head>
 <? include "$confroot/$templates/$template_html_posthead" ?>
-<body>
-<? include "$confroot/$templates/$template_html_logotop" ?>
+<? //--- The body tag and anything else needed ---?>
+<? include "$confroot/$templates/$template_html_bodystart" ?>
+<? include "$confroot/$templates/$template_html_logotop" ?>  <!-- This container is empty for the river so it can be fluid in the next line. -->
 </div>
 <div class="container-fluid">
     <? include "$confroot/$templates/$template_html_menubar" ?>
@@ -35,6 +31,7 @@ $tree_location = "River";
 
         <div id="stream-wrap" class="stream-wrap">
             <div id="stream" class="stream">
+                <button id="unstickyAllItems" class="hide" title="Unsticky All"><i class="fa fa-star-half-o"></i></button>
                 <p class="notice"><img id="imgLoadRiverSpinner" class="imgSpinner" src="/images/spinner.gif" alt=""/>
                     Loading river...</p>
 
@@ -51,23 +48,26 @@ $tree_location = "River";
             </div>
         <? } ?>
 
+
         <script id="template" type="text/x-jquery-tmpl">
             <? include "$confroot/$scripts/river-temp-item.js" ?>
+
         </script>
 
         <script id="template-sticky" type="text/x-jquery-tmpl">
             <? include "$confroot/$scripts/river-temp-sticky.js" ?>
+
         </script>
 
         <script id="template-subitem" type="text/x-jquery-tmpl">
             <? include "$confroot/$scripts/river-temp-subitem.js" ?>
+
         </script>
 
         <? //--- Include the footer bar html fragments -----------?>
         <? include "$confroot/$templates/$template_html_footerbar" ?>
-        <script>
-            <?include "$confroot/$scripts/river-foot.js"?>
-        </script>
+        <!-- Local postload scripts -->
+        <script src="/script/river-foot.js"></script>
+        <? include "$confroot/$templates/$template_html_postbody" ?>
 </body>
-<? include "$confroot/$templates/$template_html_postbody" ?>
 </html>

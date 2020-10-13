@@ -14,12 +14,14 @@ if (($pid = cronHelper::lock()) !== FALSE) {
         $silent = TRUE;
     }
 
+
     $cfname = "$confroot/conf/cartulary.conf";
     $cftemp = "$confroot/$templates/cartulary.conf";
 
     //Default values
     $l_pathtocart = $confroot;
     $l_serverguid = random_gen(64);
+    $l_dblocalhost = "127.0.0.1";
     $l_dbusername = "cartulary";
     $l_dbpassword = "cartulary";
     $l_fqdn = "localhost";
@@ -47,12 +49,16 @@ if (($pid = cronHelper::lock()) !== FALSE) {
     $l_cg_session_hijack_checking = 0;
     $l_cg_paypal_enabled = FALSE;
     $l_cg_paypal_button_id = "";
+    $l_cg_search_v2_enable = FALSE;
+    $l_cg_admin_feed_check_token = random_gen(17);
+    $l_cg_backup_temp_folder = "";
 
 
     //If there is already a config file, let's hang on to it
     if (file_exists($cfname)) {
         if ($action == "upgrade") {
             //Pull in the existing values
+            $l_dblocalhost = $dbhost;
             $l_dbusername = $dbuser;
             $l_dbpassword = $dbpass;
             $l_fqdn = $system_fqdn;
@@ -109,6 +115,15 @@ if (($pid = cronHelper::lock()) !== FALSE) {
             if (isset($cg_paypal_button_id)) {
                 $l_cg_paypal_button_id = $cg_paypal_button_id;
             }
+            if (isset($cg_search_v2_enable)) {
+                $l_cg_search_v2_enable = $cg_search_v2_enable;
+            }
+            if (isset($cg_admin_feed_check_token)) {
+                $l_cg_admin_feed_check_token = $cg_admin_feed_check_token;
+            }
+            if (isset($cg_backup_temp_folder)) {
+                $l_cg_backup_temp_folder = $cg_backup_temp_folder;
+            }
         }
 
         copy($cfname, $cfname . '.old.' . time());
@@ -122,6 +137,17 @@ if (($pid = cronHelper::lock()) !== FALSE) {
 
 
     //Replace the tags
+    $response = "";
+    if ($silent == FALSE) {
+        echo "What is your mysql hostname? [$l_dblocalhost]: ";
+        $response = get_user_response();
+    }
+    if (empty($response) || $silent == TRUE) {
+        $response = $l_dblocalhost;
+    }
+    $template = str_replace('[DBLOCALHOST]', $response, $template);
+
+
     $response = "";
     if ($silent == FALSE) {
         echo "What is your mysql username? [$l_dbusername]: ";
@@ -318,7 +344,26 @@ if (($pid = cronHelper::lock()) !== FALSE) {
     }
 
     //Preserve paypal button id
-    $template = str_replace('cg_paypal_button_id=""', 'cg_paypal_button_id="'.$l_cg_paypal_button_id.'"', $template);
+    $template = str_replace('cg_paypal_button_id=""', 'cg_paypal_button_id="' . $l_cg_paypal_button_id . '"', $template);
+
+    //Search v2 enabled?
+    if ($l_cg_search_v2_enable == TRUE) {
+        $template = str_replace('cg_search_v2_enable=false', 'cg_search_v2_enable=true', $template);
+    }
+
+    //Admin feed check token
+    $response = "";
+    if ($silent == FALSE) {
+        echo "Make a secure token for the admin log rss feed? [$l_cg_admin_feed_check_token]: ";
+        $response = get_user_response();
+    }
+    if (empty($response)) {
+        $response = $l_cg_admin_feed_check_token;
+    }
+    $template = str_replace('[ADMINFEEDCHECKTOKEN]', $response, $template);
+
+    //Preserve backup temp folder
+    $template = str_replace('[BACKUPTEMPFOLDER]', $l_cg_backup_temp_folder, $template);
 
     //Eliminate the newinstall flag if it's set
     if (!isset($cartularynewinstall)) {
@@ -344,11 +389,6 @@ if (($pid = cronHelper::lock()) !== FALSE) {
         echo $output;
     }
 
-    //Log the upgrade
-    if ($action == "upgrade") {
-        add_admin_log_item("System was upgraded from version $version", "System Upgrade");
-    }
-
     echo "\n";
 
     //Remove the lock file
@@ -357,4 +397,3 @@ if (($pid = cronHelper::lock()) !== FALSE) {
 
 // Log and leave
 return (TRUE);
-?>

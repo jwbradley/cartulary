@@ -26,43 +26,43 @@ export CARTROOT=`echo "<?echo rtrim(get_cfg_var('cartulary_conf'), '/');?>" | ph
 
 ##: Grab the current repo and extract it
 clear
-echo
-echo '############################################################'
-echo '##----------------------------------------------------------'
-echo '##                                                          '
-echo "##  Grabbing the current $BRANCH release.                   "
-echo '##                                                          '
-echo '##----------------------------------------------------------'
-echo '############################################################'
-echo
-rm $BRANCH.zip
-wget https://github.com/daveajones/cartulary/archive/$BRANCH.zip
-unzip $BRANCH.zip
+##: Check the hash on this upgrade script so we can detect changes
+export UPDOLDHASH=`md5sum $CARTROOT/bin/upgrade.sh | awk '{ print $1 }'`
+
+if [ -e "$BRANCH.zip" ] ; then
+    rm $BRANCH.zip
+fi
+wget --progress=bar:force https://github.com/daveajones/cartulary/archive/$BRANCH.zip
+
+unzip -q $BRANCH.zip
 
 ##: Stop cron
-stop cron
+service cron stop
 
 ##: Kill running jobs
-killall php
+killall php >/dev/null 2>/dev/null
+killall node >/dev/null 2>/dev/null
 
 ##: Back up the existing install
-tar -zcvf ~/cartulary-bak-$BAKDATE.tar.gz $CARTROOT
+tar -zcf ~/cartulary-bak-$BAKDATE.tar.gz $CARTROOT
 
 ##: Get into the repo folder
 cd cartulary-$BRANCH
 
 ##: Backup newuser sub list
-cp $CARTROOT/www/newuser.opml /tmp
+#cp $CARTROOT/www/newuser.opml /tmp
 
 ##: Put new files in place
 cp -R aggrivate $CARTROOT/aggrivate
 cp -R aggrivate/* $CARTROOT/aggrivate
-cp -R bin/* $CARTROOT/bin
+cp -R bin/*.php $CARTROOT/bin
+cp bin/cartlog $CARTLOG/bin
+cp bin/upgrade.sh $CARTROOT/bin/new-upgrade.sh
 cp -R includes/* $CARTROOT/includes
 cp -R libraries/* $CARTROOT/libraries
 cp -R scripts/* $CARTROOT/scripts
 cp -R templates/* $CARTROOT/templates
-cp -R releases/* $CARTROOT/releases
+cp -R releases $CARTROOT
 cp -R www/* $CARTROOT/www
 
 ##: Set permissions
@@ -72,9 +72,10 @@ touch $CARTROOT/logs/access.log
 chown www-data $CARTROOT/logs >>/tmp/cartinstall.log 2>&1
 chown www-data $CARTROOT/logs/* >>/tmp/cartinstall.log 2>&1
 chown www-data $CARTROOT/spool >>/tmp/cartinstall.log 2>&1
+chmod +x $CARTROOT/releases/v*-apt.sh
 
 ##: Restore newuser sub list
-cp /tmp/newuser.opml $CARTROOT/www
+#cp /tmp/newuser.opml $CARTROOT/www
 
 ##: Get out of the repo
 cd ..
@@ -83,37 +84,33 @@ cd ..
 rm -rf cartulary-$BRANCH/
 rm $BRANCH.zip
 
-##: Run supplemental version scripts
-$CARTROOT/releases/
-
 ##: Run confcheck
-clear
-echo
-echo '############################################################'
-echo '##----------------------------------------------------------'
-echo '##                                                          '
-echo '##  Upgrade cartulary.conf file.                            '
-echo '##                                                          '
-echo '##  - If you mess up here, just run:                        '
-echo "##    > sudo php $CARTROOT/bin/confcheck.php upgrade        "
-echo '##    after the upgrade finishes.                           '
-echo '##                                                          '
-echo '##----------------------------------------------------------'
-echo '############################################################'
-echo
 php $CARTROOT/bin/confcheck.php upgrade silent
 
 ##: Check the database version
 php $CARTROOT/bin/dbcheck.php
 
-##: Restart cron daemon
-echo
-start cron
-
 ##: Run any side-scripts that were shipped with this version
 php $CARTROOT/bin/sidegrade.php
 
+##: Restart cron daemon
+service cron start
+
 service apache2 restart
 
-echo
-echo 'Upgrade is finished.'
+##: ----- Update this script -----
+export UPDNEWHASH=`md5sum $CARTROOT/bin/new-upgrade.sh | awk '{ print $1 }'`
+
+##: Check hash again for the upgrade script
+echo "Update is finished."
+if [ "$UPDOLDHASH" != "$UPDNEWHASH" ] ; then
+    echo
+    echo
+    echo
+    echo " **** A new version of this upgrade script was just installed. ****"
+    echo " ****  You should run the upgrade again right now. Sorry :-(   **** "
+    echo
+    echo
+    echo
+fi
+mv $CARTROOT/bin/new-upgrade.sh $CARTROOT/bin/upgrade.sh
